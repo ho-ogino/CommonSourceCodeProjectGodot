@@ -115,7 +115,7 @@ public:
 #ifdef DATAREC_SOUND
 		sound_volume_l = sound_volume_r = 1024;
 #endif
-		my_tcscpy_s(message, _T("Stop"));
+		my_tcscpy_s(message, array_length(message), _T("Stop"));
 		drive_num = 0;
 		set_device_name(_T("Data Recorder"));
 	}

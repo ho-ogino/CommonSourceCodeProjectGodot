@@ -189,10 +189,10 @@
 #define USE_SOUND_VOLUME	7
 #endif
 #define USE_JOYSTICK
-#define USE_DEBUGGER
+//#define USE_DEBUGGER
 #define USE_STATE
-#define USE_PRINTER
-#define USE_PRINTER_TYPE	4
+//#define USE_PRINTER
+//#define USE_PRINTER_TYPE	4
 #if defined(MSX_PSG_STEREO)
 #define USE_SOUND_TYPE		2
 #endif

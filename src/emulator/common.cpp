@@ -34,6 +34,16 @@
 #include "common.h"
 #include "fileio.h"
 
+#if defined(_GDNATIVE_)
+
+#if !defined(_WIN32)
+#include <string>
+#endif
+
+static _TCHAR application_path[_MAX_PATH];
+
+#endif
+
 #if defined(__MINGW32__) || defined(__MINGW64__)
 	extern DWORD GetLongPathName(LPCTSTR lpszShortPath, LPTSTR lpszLongPath, DWORD cchBuffer);
 #endif
@@ -42,6 +52,7 @@
 	std::string DLL_PREFIX my_procname;
 	std::string DLL_PREFIX sRssDir;
 #endif
+
 
 void DLL_PREFIX common_initialize()
 {
@@ -356,7 +367,8 @@ int DLL_PREFIX my_swprintf_s(wchar_t *buffer, size_t sizeOfBuffer, const wchar_t
 {
 	va_list ap;
 	va_start(ap, format);
-	int result = vswprintf(buffer, format, ap);
+	// int result = vswprintf(buffer, format, ap);
+	int result = vswprintf(buffer, sizeOfBuffer, format, ap);
 	va_end(ap);
 	return result;
 }
@@ -1004,13 +1016,22 @@ static void _my_mkdir(std::string t_dir)
 }
 #endif
 
+#if defined(_GDNATIVE_)
+const void DLL_PREFIX set_application_path(_TCHAR* path)
+{
+	strcpy(application_path, path);
+}
+#endif
+
 const _TCHAR *DLL_PREFIX get_application_path()
 {
 	static _TCHAR app_path[_MAX_PATH];
 	static bool initialized = false;
 	
 	if(!initialized) {
-#if defined(_WIN32) && !defined(_USE_QT)
+#if defined(_GDNATIVE_)
+	return application_path;
+#elif defined(_WIN32) && !defined(_USE_QT)
 		_TCHAR tmp_path[_MAX_PATH], *ptr = NULL;
 		if(GetModuleFileName(NULL, tmp_path, _MAX_PATH) != 0 && GetFullPathName(tmp_path, _MAX_PATH, app_path, &ptr) != 0 && ptr != NULL) {
 			*ptr = _T('\0');
@@ -1018,6 +1039,7 @@ const _TCHAR *DLL_PREFIX get_application_path()
 			my_tcscpy_s(app_path, _MAX_PATH, _T(".\\"));
 		}
 #else
+
 #if defined(Q_OS_WIN)
 		std::string delim = "\\";
 #else
@@ -1029,6 +1051,7 @@ const _TCHAR *DLL_PREFIX get_application_path()
 		std::string cpath = csppath + my_procname + delim;
 		_my_mkdir(cpath);
 		strncpy(app_path, cpath.c_str(), _MAX_PATH - 1);
+#
 #endif
 		initialized = true;
 	}

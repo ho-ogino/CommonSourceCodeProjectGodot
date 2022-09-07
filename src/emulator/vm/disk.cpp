@@ -16,6 +16,11 @@
 #define local_path(x) (x)
 #endif
 
+#ifdef USE_DISK_ENCRYPT
+void encrypt_disk(_TCHAR *path);
+void decrypt_disk(const _TCHAR *path);
+#endif
+
 // crc table
 static const uint16_t crc_table[256] = {
 	0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7, 0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
@@ -109,6 +114,10 @@ static const fd_format_t fd_formats[] = {
 
 void DISK::open(const _TCHAR* file_path, int bank)
 {
+#ifdef USE_DISK_ENCRYPT
+	decrypt_disk(file_path);
+#endif
+
 	// check current disk image
 	if(inserted) {
 		if(_tcsicmp(orig_path, file_path) == 0 && file_bank == bank) {
@@ -699,6 +708,9 @@ void DISK::open(const _TCHAR* file_path, int bank)
 		}
 #endif
 	}
+
+	// オリジナルファイルを消す
+	FILEIO::RemoveFile(file_path);
 }
 
 void DISK::close()
@@ -739,6 +751,10 @@ void DISK::close()
 						fio->Fread(post_buffer, post_size, 1);
 					}
 					fio->Fclose();
+
+#ifdef USE_DISK_ENCRYPT
+					encrypt_disk(dest_path);
+#endif
 				}
 			}
 			
@@ -837,6 +853,10 @@ void DISK::close()
 				free(post_buffer);
 			}
 			delete fio;
+
+#ifdef USE_DISK_ENCRYPT
+			encrypt_disk(dest_path);
+#endif
 		}
 		ejected = true;
 	}
@@ -1470,7 +1490,7 @@ void DISK::trim_buffer()
 	file_size.write_4bytes_le_to(tmp_buffer + 0x1c);
 	
 	memset(buffer, 0, sizeof(buffer));
-	memcpy(buffer, tmp_buffer, min(sizeof(buffer), file_size.d));
+	memcpy(buffer, tmp_buffer, min((unsigned int)sizeof(buffer), file_size.d));
 }
 
 int DISK::get_max_tracks()

@@ -8,7 +8,7 @@
 */
 
 #include <stdlib.h>
-#include <malloc.h> 
+//#include <malloc.h> 
 #include "fifo.h"
 #include "fileio.h"
 

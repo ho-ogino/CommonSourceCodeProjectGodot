@@ -121,9 +121,9 @@
 #define USE_JOY_BUTTON_CAPTIONS
 #endif
 #define USE_MOUSE
-#define USE_PRINTER
-#define USE_PRINTER_TYPE	5
-#define USE_DEBUGGER
+//#define USE_PRINTER
+//#define USE_PRINTER_TYPE	5
+//#define USE_DEBUGGER
 #define USE_STATE
 
 #include "../../common.h"

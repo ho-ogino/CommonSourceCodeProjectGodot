@@ -129,6 +129,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 		ctc2 = new Z80CTC(this, emu);
 		ctc2->set_device_name(_T("Z80 CTC (CZ-8BS1 #2)"));
 	}
+#ifdef USE_PRINTER
 	if(config.printer_type == 0) {
 		printer = new PRNFILE(this, emu);
 	} else if(config.printer_type == 1) {
@@ -140,6 +141,10 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	} else {
 		printer = dummy;
 	}
+#else
+	printer = dummy;
+#endif
+
 #ifdef _X1TURBO_FEATURE
 	dma = new Z80DMA(this, emu);
 #ifdef USE_DEBUGGER
@@ -189,9 +194,11 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	if(sound_type == 2) {
 		event->set_context_sound(opm2);
 	}
+#ifdef USE_PRINTER
 	if(config.printer_type == 3) {
 		event->set_context_sound(printer);
 	}
+#endif
 	event->set_context_sound(psg);
 	event->set_context_sound(drec);
 	event->set_context_sound(fdc->get_context_noise_seek());
@@ -239,6 +246,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 //		ctc2->set_constant_clock(1, CPU_CLOCKS >> 1);
 //		ctc2->set_constant_clock(2, CPU_CLOCKS >> 1);
 	}
+#ifdef USE_PRINTER
 	if(config.printer_type == 0) {
 		PRNFILE *prnfile = (PRNFILE *)printer;
 		prnfile->set_context_busy(pio, SIG_I8255_PORT_B, 0x08);
@@ -250,6 +258,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 //		PCPR201 *pcpr201 = (PCPR201 *)printer;
 //		pcpr201->set_context_busy(pio, SIG_I8255_PORT_B, 0x08);
 	}
+#endif
 #ifdef _X1TURBO_FEATURE
 	dma->set_context_memory(memory);
 	dma->set_context_io(iobus);
@@ -615,10 +624,12 @@ void VM::initialize_sound(int rate, int samples)
 	if(sound_type == 2) {
 		opm2->initialize_sound(rate, 4000000, samples, 0);
 	}
+#ifdef USE_PRINTER
 	if(config.printer_type == 3) {
 		PCM8BIT *pcm8 = (PCM8BIT *)printer;
 		pcm8->initialize_sound(rate, 8000);
 	}
+#endif
 	psg->initialize_sound(rate, 2000000, samples, 0, 0);
 #ifdef _X1TWIN
 	pce->initialize_sound(rate);
@@ -663,10 +674,12 @@ void VM::set_sound_device_volume(int ch, int decibel_l, int decibel_r)
 			opm2->set_volume(0, decibel_l, decibel_r);
 		}
 	} else if(ch == 3) {
+#ifdef USE_PRINTER
 		if(config.printer_type == 3) {
 			PCM8BIT *pcm8 = (PCM8BIT *)printer;
 			pcm8->set_volume(0, decibel_l, decibel_r);
 		}
+#endif
 	} else if(ch == 4) {
 		drec->set_volume(0, decibel_l, decibel_r);
 	} else if(ch == 5) {

@@ -35,6 +35,8 @@
 #elif defined(_USE_SDL)
 #include <pthread.h>
 #define OSD_SDL
+#elif defined(_GDNATIVE_)
+#define OSD_GODOT
 #elif defined(_WIN32)
 #define OSD_WIN32
 #else
@@ -50,6 +52,8 @@
 #include "sdl/osd.h"
 #elif defined(OSD_WIN32)
 #include "win32/osd.h"
+#elif defined(OSD_GODOT)
+#include "godot/osd.h"
 #endif
 
 #ifdef USE_FLOPPY_DISK
@@ -522,6 +526,7 @@ public:
 	void load_sound_file(int id, const _TCHAR *name, int16_t **data, int *dst_size);
 	void free_sound_file(int id, int16_t **data);
 #endif
+	int get_sound_samples() { return sound_samples; }
 };
 
 #endif

@@ -107,7 +107,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
 #include <io.h>
+#else
+#include <unistd.h>
+#include "../vkdef.h"
+#endif
+
+#ifdef __APPLE__
+#include <limits.h>
+#endif
+
 #include <math.h>
 #ifdef _MSC_VER
 	#if _MSC_VER < 1920
@@ -811,7 +822,7 @@ int16_t DLL_PREFIX ExchangeEndianS16(uint16_t x);
 		#define _fgetts fgets
 	#endif
 	#ifndef _ftprintf
-		#define _ftprintf printf
+		#define _ftprintf fprintf
 	#endif
 	#ifndef _tfopen
 		#define _tfopen fopen
@@ -984,18 +995,19 @@ int16_t DLL_PREFIX ExchangeEndianS16(uint16_t x);
 // 20181104 K.O:
 // Below routines aim to render common routine.
 
-#ifdef _MSC_VER
-	#define __DECL_ALIGNED(foo) __declspec(align(foo))
-	#ifndef __builtin_assume_aligned
-		#define __builtin_assume_aligned(foo, a) foo
-	#endif
-#elif defined(__GNUC__)
-	#define __DECL_ALIGNED(foo) __attribute__((aligned(foo)))
-#else
-	// ToDo
-	#define __builtin_assume_aligned(foo, a) foo
-	#define __DECL_ALIGNED(foo)
-#endif
+// ogino
+// #ifdef _MSC_VER
+// 	#define __DECL_ALIGNED(foo) __declspec(align(foo))
+// 	#ifndef __builtin_assume_aligned
+// 		#define __builtin_assume_aligned(foo, a) foo
+// 	#endif
+// #elif defined(__GNUC__)
+// 	#define __DECL_ALIGNED(foo) __attribute__((aligned(foo)))
+// #else
+// 	// ToDo
+// 	#define __builtin_assume_aligned(foo, a) foo
+// 	#define __DECL_ALIGNED(foo)
+// #endif
 
 // wav file header
 #pragma pack(1)
@@ -1020,6 +1032,9 @@ typedef struct {
 #pragma pack()
 
 // file path
+#if defined(_GDNATIVE_)
+const void DLL_PREFIX set_application_path(_TCHAR *path);
+#endif
 const _TCHAR *DLL_PREFIX get_application_path();
 const _TCHAR *DLL_PREFIX get_initial_current_path();
 const _TCHAR *DLL_PREFIX create_local_path(const _TCHAR *format, ...);
@@ -1095,5 +1110,7 @@ typedef struct symbol_s {
 const _TCHAR *DLL_PREFIX get_symbol(symbol_t *first_symbol, uint32_t addr);
 const _TCHAR *DLL_PREFIX get_value_or_symbol(symbol_t *first_symbol, const _TCHAR *format, uint32_t addr);
 const _TCHAR *DLL_PREFIX get_value_and_symbol(symbol_t *first_symbol, const _TCHAR *format, uint32_t addr);
+
+#include "../godotcommon.h"
 
 #endif
