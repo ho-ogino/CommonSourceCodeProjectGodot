@@ -3,8 +3,10 @@
 
 #pragma once
 
+#define VK_BACK           0x08
 #define VK_TAB            0x09
 
+#define VK_CLEAR          0x0C
 #define VK_RETURN         0x0D
 
 #define VK_SHIFT          0x10
@@ -14,6 +16,7 @@
 #define VK_CAPITAL        0x14
 
 #define VK_KANA           0x15
+#define VK_KANJI          0x19
 
 #define VK_ESCAPE         0x1B
 
