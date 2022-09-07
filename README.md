@@ -4,7 +4,7 @@ v0.1.0 (2022/9/7)
 
 ## Introduction
 
-CommonSourceCodeProjectGodotは、TAKEDA, toshiyaさんのCommon Source Code Projectの一部をGodot Engineで動作するよう移植したものです。
+CommonSourceCodeProjectGodotは、TAKEDA, toshiyaさんのCommon Source Code Projectの一部をGodot Engine( https://godotengine.org/ )で動作するよう移植したものです。
 
 ⇒ [Common Source Code Project](http://takeda-toshiya.my.coocan.jp/)
 
@@ -17,6 +17,13 @@ CommonSourceCodeProjectGodotは、TAKEDA, toshiyaさんのCommon Source Code Pro
 ## ビルド方法
 
 まずはGDNativeのビルドを行います。
+
+リポジトリ取得後にサブモジュールを更新
+```
+cd godot-cpp
+submodule update --init
+cd ..
+```
 
 Windowsの場合(Visual StudioのDeveloper Commnand Promptにて動作確認済)
 ```
