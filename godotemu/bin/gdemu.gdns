@@ -1,0 +1,8 @@
+[gd_resource type="NativeScript" load_steps=2 format=2]
+
+[ext_resource path="res://bin/gdemu.gdnlib" type="GDNativeLibrary" id=1]
+
+[resource]
+resource_name = "gdemu"
+class_name = "GDEmu"
+library = ExtResource( 1 )
