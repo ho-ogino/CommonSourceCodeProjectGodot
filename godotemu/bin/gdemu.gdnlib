@@ -7,7 +7,7 @@ reloadable=false
 
 [entry]
 
-X11.64="res://bin/x11/libgdemu.so"
+X11.64="res://bin/linux/libgdemu.so"
 Windows.64="res://bin/windows/libgdemu.dll"
 OSX.64="res://bin/osx/libgdemu.dylib"
 
