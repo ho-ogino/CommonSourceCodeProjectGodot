@@ -115,7 +115,7 @@
 #include "../vkdef.h"
 #endif
 
-#ifdef __APPLE__
+#ifndef _WIN32
 #include <limits.h>
 #endif
 
