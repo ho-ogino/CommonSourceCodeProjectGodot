@@ -1,4 +1,4 @@
-#include "gdemu.h"
+﻿#include "gdemu.h"
 
 #include "./emulator/emu.h"
 #include "./emulator/fifo.h"
@@ -46,7 +46,7 @@ PoolByteArray compress_mem(PoolByteArray source_pool)
   dest.erase(dest.begin() + destLen, dest.end());
 
   PoolByteArray result = PoolByteArray();
-  for(int i = 0; i < destLen; i++)
+  for(uLong i = 0; i < destLen; i++)
   {
     result.append(dest[i]);
   }
@@ -54,7 +54,7 @@ PoolByteArray compress_mem(PoolByteArray source_pool)
 
   if(destLen % 16)
   {
-    for(int i = 0; i < 16 - (destLen % 16); i++ )
+    for(uLong i = 0; i < 16 - (destLen % 16); i++ )
     {
       result.append(0);
     }
@@ -63,7 +63,7 @@ PoolByteArray compress_mem(PoolByteArray source_pool)
   return result;
 }
 
-PoolByteArray uncompress_mem(PoolByteArray compressed, const unsigned int original_size) {
+PoolByteArray uncompress_mem(PoolByteArray compressed, const uLongf original_size) {
 
   // 元のデータのサイズだけメモリ確保
   std::vector< Bytef > dest;
@@ -82,7 +82,7 @@ PoolByteArray uncompress_mem(PoolByteArray compressed, const unsigned int origin
     return PoolByteArray();
 
   PoolByteArray result = PoolByteArray();
-  for(int i = 0; i < destLen; i++)
+  for(uLong i = 0; i < destLen; i++)
   {
     result.append(dest[i]);
   }
@@ -105,7 +105,7 @@ void decrypt_disk(const _TCHAR *path)
     Ref<File> enc_file = File::_new();
     enc_file->open(enc_path, File::ModeFlags::READ);
     // 4バイトサイズ
-    int dat_size = enc_file->get_32();
+    int64_t dat_size = enc_file->get_32();
     // 16バイトIV
     PoolByteArray iv = enc_file->get_buffer(16);
     // 残りが圧縮＆暗号化ファイル
@@ -127,7 +127,7 @@ void decrypt_disk(const _TCHAR *path)
     aes->finish();
 
     // 次に解凍する
-    auto dec_data = uncompress_mem(decrypted, dat_size);
+    auto dec_data = uncompress_mem(decrypted, (uLongf)dat_size);
 
     // 解凍したものを書いてみる(読み終わったら消す事)
     Ref<File> dec_file = File::_new();
@@ -149,7 +149,7 @@ void encrypt_disk(_TCHAR *path)
     fio->Fclose();
 
     PoolByteArray orig_data;
-    for(int i = 0; i < total_size; i++)
+    for(uint32_t i = 0; i < total_size; i++)
     {
         orig_data.append(file_buffer[i]);
     }
@@ -203,13 +203,22 @@ String resdisk_to_userdir(String path, bool isEncrypt)
     String encrypt_out_path = out_path + ENCRYPT_FILE_EXT;
 
     // 既にある場合はコピーせずに戻す
-    if(dir->file_exists(encrypt_out_path))
+    if(isEncrypt && dir->file_exists(encrypt_out_path))
     {
-        Ref<File> file = File::_new();
-        file->open(encrypt_out_path, File::ModeFlags::READ);
-        abs_path = file->get_path_absolute();
-        file->close();
-        return abs_path.substr(0, abs_path.length() - 4);   // .binを消す
+      // 暗号化ファイルの拡張子を消して返す
+      Ref<File> file = File::_new();
+      file->open(encrypt_out_path, File::ModeFlags::READ);
+      abs_path = file->get_path_absolute();
+      file->close();
+      return abs_path.substr(0, abs_path.length() - 4);   // .binを消す
+    } else if(!isEncrypt && dir->file_exists(out_path))
+    {
+      // 非暗号化ファイルをそのまま返す
+      Ref<File> file = File::_new();
+      file->open(out_path, File::ModeFlags::READ);
+      abs_path = file->get_path_absolute();
+      file->close();
+      return abs_path.substr(0, abs_path.length());
     }
 
     Ref<File> res_file = File::_new();
@@ -233,7 +242,6 @@ String resdisk_to_userdir(String path, bool isEncrypt)
     abs_path = out_file->get_path_absolute();
     out_file->close();
 
-#ifdef USE_DISK_ENCRYPT
     if(isEncrypt)
     {
       // コピーしたものを暗号化
@@ -247,14 +255,13 @@ String resdisk_to_userdir(String path, bool isEncrypt)
       // そしてコピーしたオリジナルファイルを消す
       dir->remove(out_path);
     }
-#endif
 
     return orig_out_path;
 }
 
 void GDEmu::open_floppy_disk(int drv, String file_path, int bank)
 {
-    String abs_path = resdisk_to_userdir(file_path, true);
+    String abs_path = resdisk_to_userdir(file_path, DISK::is_encrypt);
 
     char* cpath  = abs_path.alloc_c_string();
 
@@ -297,7 +304,7 @@ void GDEmu::open_hard_disk(int drv, String file_path)
 
     char* cpath  = abs_path.alloc_c_string();
 
-    printf("open harddisk: %d %s (%d)\n", drv, cpath);
+    printf("open harddisk: %d %s\n", drv, cpath);
 
     emu->open_hard_disk(drv, cpath);
 

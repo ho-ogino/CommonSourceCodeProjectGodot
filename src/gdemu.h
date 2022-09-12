@@ -15,6 +15,7 @@
 #include "emulator/common.h"
 #include "emulator/config.h"
 #include "emulator/vm/vm.h"
+#include "emulator/vm/disk.h"
 
 class EMU;
 
@@ -71,6 +72,8 @@ public:
     int is_floppy_disk_accessed();
 
     void set_app_path(String path);
+
+    void set_disk_encrypt(bool flag) { DISK::is_encrypt = flag; }
 };
 
 }

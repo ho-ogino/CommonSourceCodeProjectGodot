@@ -16,10 +16,8 @@
 #define local_path(x) (x)
 #endif
 
-#ifdef USE_DISK_ENCRYPT
 void encrypt_disk(_TCHAR *path);
 void decrypt_disk(const _TCHAR *path);
-#endif
 
 // crc table
 static const uint16_t crc_table[256] = {
@@ -46,6 +44,8 @@ static const int secsize[8] = {
 };
 
 static uint8_t tmp_buffer[DISK_BUFFER_SIZE];
+
+bool DISK::is_encrypt = true;
 
 // physical format table for solid image
 typedef struct {
@@ -114,9 +114,10 @@ static const fd_format_t fd_formats[] = {
 
 void DISK::open(const _TCHAR* file_path, int bank)
 {
-#ifdef USE_DISK_ENCRYPT
-	decrypt_disk(file_path);
-#endif
+	if(is_encrypt)
+	{
+		decrypt_disk(file_path);
+	}
 
 	// check current disk image
 	if(inserted) {
@@ -709,8 +710,11 @@ void DISK::open(const _TCHAR* file_path, int bank)
 #endif
 	}
 
-	// オリジナルファイルを消す
-	FILEIO::RemoveFile(file_path);
+	if(is_encrypt)
+	{
+		// オリジナルファイルを消す
+		FILEIO::RemoveFile(file_path);
+	}
 }
 
 void DISK::close()
@@ -752,9 +756,10 @@ void DISK::close()
 					}
 					fio->Fclose();
 
-#ifdef USE_DISK_ENCRYPT
-					encrypt_disk(dest_path);
-#endif
+					if(is_encrypt)
+					{
+						encrypt_disk(dest_path);
+					}
 				}
 			}
 			
@@ -854,9 +859,10 @@ void DISK::close()
 			}
 			delete fio;
 
-#ifdef USE_DISK_ENCRYPT
-			encrypt_disk(dest_path);
-#endif
+			if(is_encrypt)
+			{
+				encrypt_disk(dest_path);
+			}
 		}
 		ejected = true;
 	}

@@ -4,6 +4,7 @@ onready var emulator = $Emulator
 onready var drive1_access = $Control/Drive1Access
 onready var drive2_access = $Control/Drive2Access
 
+export var is_disk_encrypt: bool = true
 export var drivea_path: String
 export var driveb_path: String
 export var harddisk0_path: String
@@ -76,6 +77,7 @@ func _ready() -> void:
 	$AudioPlayer.play()
 
 	emulator.setup()
+	emulator.set_disk_encrypt(is_disk_encrypt)
 
 	sound_samples = emulator.get_sound_samples()
 	sound_play_offset = 0
