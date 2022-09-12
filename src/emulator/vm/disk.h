@@ -157,6 +157,8 @@ public:
 	int get_bytes_per_usec(double usec);
 	bool check_media_type();
 	
+	static bool is_encrypt;
+
 	bool inserted;
 	bool ejected;
 	bool write_protected;

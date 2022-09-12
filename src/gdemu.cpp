@@ -36,6 +36,8 @@ void GDEmu::_register_methods() {
     register_method("key_down", &GDEmu::key_down);
     register_method("key_up", &GDEmu::key_up);
 
+    register_method("set_disk_encrypt", &GDEmu::set_disk_encrypt);
+
     // プロパティを外に追い出す場合はこんな感じ……(とりあえず無しにしておく)
     // register_property<GDEmu, String>("drivea_path", &GDEmu::set_drivea_path, &GDEmu::get_drivea_path, "");
     // register_property<GDEmu, String>("driveb_path", &GDEmu::set_driveb_path, &GDEmu::get_driveb_path, "");
