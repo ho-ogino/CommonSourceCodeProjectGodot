@@ -53,7 +53,6 @@ static _TCHAR application_path[_MAX_PATH];
 	std::string DLL_PREFIX sRssDir;
 #endif
 
-
 void DLL_PREFIX common_initialize()
 {
 	// get the initial current path when the software starts
@@ -1039,7 +1038,6 @@ const _TCHAR *DLL_PREFIX get_application_path()
 			my_tcscpy_s(app_path, _MAX_PATH, _T(".\\"));
 		}
 #else
-
 #if defined(Q_OS_WIN)
 		std::string delim = "\\";
 #else
@@ -1051,7 +1049,6 @@ const _TCHAR *DLL_PREFIX get_application_path()
 		std::string cpath = csppath + my_procname + delim;
 		_my_mkdir(cpath);
 		strncpy(app_path, cpath.c_str(), _MAX_PATH - 1);
-#
 #endif
 		initialized = true;
 	}

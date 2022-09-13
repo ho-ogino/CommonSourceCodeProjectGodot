@@ -8,4 +8,4 @@ config.log
 # C / C++
 *.obj
 *.os
-
+*.o
