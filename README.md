@@ -1,6 +1,6 @@
 # CommonSourceCodeProjectGodot
 
-v0.1.0 (2022/9/7)
+v0.2.0 (2022/9/13)
 
 ## Introduction
 
@@ -12,7 +12,7 @@ CommonSourceCodeProjectGodotは、TAKEDA, toshiyaさんのCommon Source Code Pro
 
 汎用的なエミュレータとしての利用を想定しておらず、独自開発の旧パソコン用ゲーム(のディスクイメージ等)をこのエミュレーターに組み込んだ上で、Godot Engineにてビルドし、単独アプリ化した上で、Steamやitch.io、自サイトなどにて配布/販売出来れば……という意図で開発しておりますが、諸々権利的な問題があるため、現状では実験的な実装となっています。
 
-※組み込まれているCommonSourceCodeProjectは (8/30/2022)版 です。
+※組み込まれているCommonSourceCodeProjectは (9/11/2022)版 です。
 
 ## ビルド方法
 
@@ -104,6 +104,8 @@ Godot Engineのバージョンは v3.5 stable 推奨です。
 * MSXのMapper設定が出来ません(自動判別のみ)
 
 ## History
+* v0.2.0 (2022/9/11)
+  * CommonSourceCodeProjectを9/11/2022版に更新
 * v0.1.0 (2022/9/7)
   * 初版
 
