@@ -130,3 +130,34 @@ void OSD::toggle_mouse()
 }
 
 #endif
+
+#ifdef USE_PRINTER
+void OSD::create_bitmap(bitmap_t *bitmap, int width, int height)
+{}
+void OSD::release_bitmap(bitmap_t *bitmap)
+{}
+void OSD::create_font(font_t *font, const _TCHAR *family, int width, int height, int rotate, bool bold, bool italic)
+{}
+void OSD::release_font(font_t *font)
+{}
+void OSD::create_pen(pen_t *pen, int width, uint8_t r, uint8_t g, uint8_t b)
+{}
+void OSD::release_pen(pen_t *pen)
+{}
+void OSD::clear_bitmap(bitmap_t *bitmap, uint8_t r, uint8_t g, uint8_t b)
+{ }
+int OSD::get_text_width(bitmap_t *bitmap, font_t *font, const char *text)
+{
+	return 640;
+}
+void OSD::draw_text_to_bitmap(bitmap_t *bitmap, font_t *font, int x, int y, const char *text, uint8_t r, uint8_t g, uint8_t b)
+{}
+void OSD::draw_line_to_bitmap(bitmap_t *bitmap, pen_t *pen, int sx, int sy, int ex, int ey)
+{}
+void OSD::draw_rectangle_to_bitmap(bitmap_t *bitmap, int x, int y, int width, int height, uint8_t r, uint8_t g, uint8_t b)
+{}
+void OSD::draw_point_to_bitmap(bitmap_t *bitmap, int x, int y, uint8_t r, uint8_t g, uint8_t b)
+{}
+void OSD::stretch_bitmap(bitmap_t *dest, int dest_x, int dest_y, int dest_width, int dest_height, bitmap_t *source, int source_x, int source_y, int source_width, int source_height)
+{}
+#endif

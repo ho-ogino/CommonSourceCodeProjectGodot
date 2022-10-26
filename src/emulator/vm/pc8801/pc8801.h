@@ -242,7 +242,7 @@
 #else
 #define USE_PRINTER_TYPE	3
 #endif
-#define USE_DEBUGGER
+//#define USE_DEBUGGER
 #define USE_STATE
 
 #include "../../common.h"

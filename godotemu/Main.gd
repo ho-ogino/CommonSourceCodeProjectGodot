@@ -11,7 +11,7 @@ export var harddisk0_path: String
 
 export var rom_path: String
 
-## x1
+# x1
 var screen_width = 640.0
 var screen_height = 400.0
 var window_width_aspect = 640.0
@@ -22,6 +22,13 @@ var sample_hz: float = 62500.0
 #var screen_height = 384.0
 #var window_width_aspect = 576.0
 #var sample_hz: float = 48000.0
+
+### pc8801ma
+#var screen_width = 640.0
+#var screen_height = 400.0
+#var window_width_aspect = 640.0
+#var sample_hz: float = 55467.0
+
 
 var sound_samples: int = 0;
 var sound_play_offset: int = 0;
@@ -94,6 +101,12 @@ func _ready() -> void:
 
 #	# for MSX
 #	emulator.open_cart(0,rom_path)
+
+#	# for PC8801MA
+#	if !drivea_path.empty():
+#		emulator.open_floppy_disk(0, drivea_path, 0);
+#	if !driveb_path.empty():
+#		emulator.open_floppy_disk(1, driveb_path, 0);
 
 	emulator.scale.x = window_width_aspect / screen_width
 
