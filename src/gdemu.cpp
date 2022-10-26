@@ -59,13 +59,16 @@ void GDEmu::update_joystate(int num, int joystate)
 static void file_copy(String from, String to)
 {
     Ref<File> file = File::_new();
-    file->open(from, File::ModeFlags::READ);
-    PoolByteArray data = file->get_buffer(file->get_len());
-    file->close();
+    Error err = file->open(from, File::ModeFlags::READ);
+    if(err == Error::OK)
+    {
+        PoolByteArray data = file->get_buffer(file->get_len());
+        file->close();
 
-    file->open(to, File::ModeFlags::WRITE);
-    file->store_buffer(data);
-    file->close();
+        file->open(to, File::ModeFlags::WRITE);
+        file->store_buffer(data);
+        file->close();
+    }
 }
 
 
@@ -113,6 +116,22 @@ void GDEmu::_init() {
     // MSX BIOS
     file_copy("res://MSXJ.ROM", "user://MSXJ.ROM");
 #endif
+
+#if defined(_PC8801MA)
+    file_copy("res://N88.ROM", "user://N88.ROM");
+    file_copy("res://DISK.ROM", "user://DISK.ROM");
+    file_copy("res://KANJI1.ROM", "user://KANJI1.ROM");
+    file_copy("res://KANJI2.ROM", "user://KANJI2.ROM");
+
+    // ここからは実機のROM？
+    file_copy("res://PC88.ROM", "user://PC88.ROM");
+    file_copy("res://N88_0.ROM", "user://N88_0.ROM");
+    file_copy("res://N88_1.ROM", "user://N88_1.ROM");
+    file_copy("res://N88_2.ROM", "user://N88_2.ROM");
+    file_copy("res://N88_3.ROM", "user://N88_3.ROM");
+    file_copy("res://N80.ROM", "user://N80.ROM");
+#endif
+
     // フロッピーアクセス音
     file_copy("res://FDDSEEK.BIN", "user://FDDSEEK.WAV");
 
@@ -139,17 +158,19 @@ void GDEmu::_init() {
     }
 }
 
-static float FrameDelta = 1.0f / 60.0f;
 
 void GDEmu::_process(float delta) {
     time_passed += delta;
-    do
+
+    // 誤差は……気にしない……(気になる)
+    float interval = (float)emu->get_frame_interval() / 1000000.0;
+    while(time_passed >= interval)
     {
         int run_frames = emu->run();
         frame_counter += run_frames > 0 ? run_frames - 1 : 0;
 
-        time_passed -= FrameDelta;
-    }while(time_passed >= FrameDelta);
+        time_passed -= interval;
+    }
     emu->draw_screen();
 
     OSD* osd = emu->get_osd();
