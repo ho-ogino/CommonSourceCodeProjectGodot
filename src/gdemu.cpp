@@ -109,6 +109,9 @@ void GDEmu::_init() {
     // X1 IPL & FONT
     // ※毎回コピーするが気にしない
     file_copy("res://IPLROM.X1", "user://IPLROM.X1");
+    file_copy("res://IPLROM.X1", "user://IPLROM.X1T");
+    // X1Tがあれば使う。無ければX1をX1Tのかわりに使う(不気味)
+    file_copy("res://IPLROM.X1T", "user://IPLROM.X1T");
     file_copy("res://FNT0808.X1", "user://FNT0808.X1");
 #endif
 
@@ -144,6 +147,11 @@ void GDEmu::_init() {
     // FDD noise -10dB
 	emu->set_sound_device_volume(5, -30, -30);
 #endif
+
+//    X1turboで2HDから起動したい場合はこちらを有効にする事
+//    config.drive_type = 2;        // 0=2D 1=2DD 2=2HD
+//    config.monitor_type = 1;      // 0=High 1=Standard
+//    emu->get_vm()->update_dipswitch();
 
     // 真っ黒で画面をクリアしておく
     pScrArray = new PoolByteArray();

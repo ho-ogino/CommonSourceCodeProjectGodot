@@ -58,7 +58,7 @@ opts.Add(
     os.environ.get("ANDROID_NDK_ROOT", None),
 )
 
-emu_array = ["", "x1", "msx", "pc88ma"]
+emu_array = ["", "x1", "x1t", "msx", "pc88ma"]
 opts.Add(EnumVariable("emu", "Target emulator", "", emu_array))
 
 # Updates the environment with the option variables.
@@ -240,6 +240,8 @@ if env["emu"] == "msx":
     env.Append(CPPDEFINES=['_MSX1'])
 elif env["emu"] == "pc88ma":
     env.Append(CPPDEFINES=['_PC8801MA'])
+elif env["emu"] == "x1t":
+    env.Append(CPPDEFINES=['_X1','_X1TURBO'])
 else:
     env.Append(CPPDEFINES=['_X1'])
 
@@ -355,6 +357,8 @@ else:
     sources.append("src/emulator/vm/disk.cpp")
     sources.append("src/emulator/vm/harddisk.cpp")
     sources.append("src/emulator/vm/i8255.cpp")
+    if env["emu"] == "x1t":
+        sources.append("src/emulator/vm/z80dma.cpp")
     add_sources(sources, "src/emulator/vm/x1")
 
 library = env.SharedLibrary(target=env["target_path"] + "/" + platform + "/" + env["target_name"], source=sources)
