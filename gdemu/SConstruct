@@ -14,7 +14,10 @@ opts.Update(lenv)
 
 env = SConscript("../godot-cpp/SConstruct")
 
-env.Append(LINKFLAGS = ['/NODEFAULTLIB:LIBCMT'])
+if env["platform"] == "windows":
+    env.Append(LINKFLAGS = ['/NODEFAULTLIB:LIBCMT'])
+elif env["platform"] == "linux":
+    env.Append(LIBS=["z"])
 
 # For the reference:
 # - CCFLAGS are compilation flags shared between C and C++

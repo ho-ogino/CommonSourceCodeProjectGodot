@@ -7,4 +7,5 @@ compatibility_minimum = 4.1
 macos="res://bin/libgdemu.macos.template_debug.framework"
 windows.debug.x86_64 = "res://bin/libgdemu.windows.template_debug.x86_64.dll"
 windows.release.x86_64 = "res://bin/libgdemu.windows.template_release.x86_64.dll"
-
+linux.debug.x86_64 = "res://bin/libgdemu.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://bin/libgdemu.linux.template_release.x86_64.so"

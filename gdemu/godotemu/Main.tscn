@@ -9,7 +9,6 @@ buffer_length = 0.05
 [node name="Main" type="Node"]
 script = ExtResource("3")
 is_disk_encrypt = false
-drivea_path = "res://ldsys.d88"
 
 [node name="Emulator" type="GDEmu" parent="."]
 process_priority = 3

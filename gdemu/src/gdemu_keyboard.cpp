@@ -19,10 +19,10 @@ using namespace godot;
 // romaji to kana table
 static std::map<int, int> godot_to_char_map =
 {
-    {16777220, 0x08},   // KEY_BACKSPACE
-    {16777218, 0x09},   // KEY_TAB
+    {4194308, 0x08},   // KEY_BACKSPACE
+    {4194306, 0x09},   // KEY_TAB
     {4194309, 0x0d},   // KEY_ENTER
-    {16777217, 0x1b},   // KEY_ESCAPE
+    {4194305, 0x1b},   // KEY_ESCAPE
     {32, 0x20},         // KEY_SPACE
 
     {91, '['},
@@ -81,14 +81,14 @@ static std::map<int, int> godot_to_vkey_map =
     {4194308, VK_BACK},
     {4194306, VK_TAB},
     {4194309, VK_RETURN},
-    {16777225, VK_PAUSE},
+    {4194313, VK_PAUSE},
     {4194305, VK_ESCAPE},
     {32,       VK_SPACE},
 
     // {16777240, VK_KANA}, // ALTをカナキーにする
     {4194328, VK_F13},     // ALTをToggle romaji to kanaのトグルにする(F13に割り当てている)
 
-    {16777241, VK_CAPITAL}, //CapsLock
+    {4194329, VK_CAPITAL}, //CapsLock
 
     {4194332, VK_F1},
     {4194333, VK_F2},
@@ -120,16 +120,16 @@ static std::map<int, int> godot_to_vkey_map =
     {47, VK_OEM_2},     // /
 
     // TENKEY NUMBER
-    {16777350, VK_NUMPAD0},
-    {16777351, VK_NUMPAD1},
-    {16777352, VK_NUMPAD2},
-    {16777353, VK_NUMPAD3},
-    {16777354, VK_NUMPAD4},
-    {16777355, VK_NUMPAD5},
-    {16777356, VK_NUMPAD6},
-    {16777357, VK_NUMPAD7},
-    {16777358, VK_NUMPAD8},
-    {16777359, VK_NUMPAD9},
+    {4194438, VK_NUMPAD0},
+    {4194439, VK_NUMPAD1},
+    {4194440, VK_NUMPAD2},
+    {4194441, VK_NUMPAD3},
+    {4194442, VK_NUMPAD4},
+    {4194443, VK_NUMPAD5},
+    {4194444, VK_NUMPAD6},
+    {4194445, VK_NUMPAD7},
+    {4194446, VK_NUMPAD8},
+    {4194447, VK_NUMPAD9},
 
     // NUMBER
     {48, 48},   // 0
