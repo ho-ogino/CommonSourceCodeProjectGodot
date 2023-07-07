@@ -1,0 +1,56 @@
+[gd_scene load_steps=4 format=3 uid="uid://derh84wbjxu1"]
+
+[ext_resource type="Texture2D" uid="uid://c1qvlxydg7hyb" path="res://icon.png" id="2_6dk67"]
+[ext_resource type="Script" path="res://Main.gd" id="3"]
+
+[sub_resource type="AudioStreamGenerator" id="AudioStreamGenerator_hog2b"]
+mix_rate = 62500.0
+buffer_length = 0.1
+
+[node name="Main" type="Node"]
+script = ExtResource("3")
+is_disk_encrypt = false
+
+[node name="Emulator" type="GDEmu" parent="."]
+texture = ExtResource("2_6dk67")
+centered = false
+
+[node name="AudioPlayer" type="AudioStreamPlayer" parent="."]
+stream = SubResource("AudioStreamGenerator_hog2b")
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Drive1Access" type="ColorRect" parent="Control"]
+visible = false
+layout_mode = 0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -64.0
+offset_top = -12.0
+offset_right = -48.0
+offset_bottom = -4.0
+color = Color(1, 0, 0, 0.501961)
+
+[node name="Drive2Access" type="ColorRect" parent="Control"]
+visible = false
+layout_mode = 0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -24.0
+offset_top = -12.0
+offset_right = -8.0
+offset_bottom = -4.0
+color = Color(1, 0, 0, 0.501961)
+
+[node name="EmuScreen" type="Sprite2D" parent="."]
+visible = false

@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+import os
+import sys
+
+opts = Variables([], ARGUMENTS)
+
+emu_array = ["", "x1", "x1t", "msx", "pc88ma"]
+opts.Add(EnumVariable("emu", "Target emulator", "", emu_array))
+
+
+lenv = DefaultEnvironment()
+
+opts.Update(lenv)
+
+env = SConscript("../godot-cpp/SConstruct")
+
+# For the reference:
+# - CCFLAGS are compilation flags shared between C and C++
+# - CFLAGS are for C-specific compilation flags
+# - CXXFLAGS are for C++-specific compilation flags
+# - CPPFLAGS are for pre-processor flags
+# - CPPDEFINES are for pre-processor defines
+# - LINKFLAGS are for linking flags
+
+if lenv["emu"] == "msx":
+    env.Append(CPPDEFINES=['_MSX1'])
+elif lenv["emu"] == "pc88ma":
+    env.Append(CPPDEFINES=['_PC8801MA'])
+elif lenv["emu"] == "x1t":
+    env.Append(CPPDEFINES=['_X1','_X1TURBO'])
+else:
+    env.Append(CPPDEFINES=['_X1'])
+
+def add_sources(sources, dir):
+    for f in os.listdir(dir):
+        if f.endswith(".cpp"):
+            sources.append(dir + "/" + f)
+
+
+# tweak this if you want to use different folders, or more folders, to store your source code in.
+env.Append(CPPPATH=["src/"])
+# sources = Glob("src/*.cpp")
+sources = []
+
+env.Append(CCFLAGS=["-D_GDNATIVE_"])
+
+add_sources(sources, "src")
+add_sources(sources, "src/emulator")
+add_sources(sources, "src/emulator/godot")
+add_sources(sources, "src/emulator/vm/fmgen")
+
+if lenv["emu"] == "msx":
+    sources.append("src/emulator/vm/event.cpp")
+    sources.append("src/emulator/vm/disk.cpp")
+    sources.append("src/emulator/vm/datarec.cpp")
+    sources.append("src/emulator/vm/i8255.cpp")
+    sources.append("src/emulator/vm/io.cpp")
+    sources.append("src/emulator/vm/noise.cpp")
+    sources.append("src/emulator/vm/not.cpp")
+    sources.append("src/emulator/vm/ay_3_891x.cpp")
+    sources.append("src/emulator/vm/pcm1bit.cpp")
+    sources.append("src/emulator/vm/tms9918a.cpp")
+    sources.append("src/emulator/vm/z80.cpp")
+    sources.append("src/emulator/vm/ym2413.cpp")
+    sources.append("src/emulator/vm/msx/msx_ex.cpp")
+    sources.append("src/emulator/vm/msx/memory_ex.cpp")
+    #sources.append("src/emulator/vm/msx/psg_stereo.cpp")
+    sources.append("src/emulator/vm/msx/joystick.cpp")
+    sources.append("src/emulator/vm/msx/keyboard.cpp")
+    sources.append("src/emulator/vm/msx/rtcif.cpp")
+    sources.append("src/emulator/vm/msx/kanjirom.cpp")
+    sources.append("src/emulator/vm/msx/scc.cpp")
+    sources.append("src/emulator/vm/msx/sound_cart.cpp")
+elif lenv["emu"] == "pc88ma":
+    sources.append("src/emulator/vm/disk.cpp")
+    sources.append("src/emulator/vm/harddisk.cpp")
+    sources.append("src/emulator/vm/event.cpp")
+    sources.append("src/emulator/vm/prnfile.cpp")
+    sources.append("src/emulator/vm/i8251.cpp")
+    sources.append("src/emulator/vm/i8255.cpp")
+    sources.append("src/emulator/vm/upd1990a.cpp")
+    sources.append("src/emulator/vm/ym2203.cpp")
+    sources.append("src/emulator/vm/z80.cpp")
+    sources.append("src/emulator/vm/noise.cpp")
+    sources.append("src/emulator/vm/pc80s31k.cpp")
+    sources.append("src/emulator/vm/upd765a.cpp")
+    sources.append("src/emulator/vm/scsi_dev.cpp")
+    sources.append("src/emulator/vm/scsi_hdd.cpp")
+    sources.append("src/emulator/vm/scsi_host.cpp")
+    sources.append("src/emulator/vm/scsi_cdrom.cpp")
+    sources.append("src/emulator/vm/ym2151.cpp")
+    sources.append("src/emulator/vm/ay_3_891x.cpp")
+    sources.append("src/emulator/vm/i8253.cpp")
+    sources.append("src/emulator/vm/pcm1bit.cpp")
+    sources.append("src/emulator/vm/pcm8bit.cpp")
+    sources.append("src/emulator/vm/pc8801/pc88.cpp")
+    sources.append("src/emulator/vm/pc8801/pc8801.cpp")
+    sources.append("src/emulator/vm/pc8801/diskio.cpp")
+else:
+    sources.append("src/emulator/vm/ay_3_891x.cpp")
+    sources.append("src/emulator/vm/event.cpp")
+    sources.append("src/emulator/vm/datarec.cpp")
+    sources.append("src/emulator/vm/hd46505.cpp")
+    sources.append("src/emulator/vm/io.cpp")
+    sources.append("src/emulator/vm/mb8877.cpp")
+    sources.append("src/emulator/vm/noise.cpp")
+    sources.append("src/emulator/vm/scsi_dev.cpp")
+    sources.append("src/emulator/vm/scsi_hdd.cpp")
+    sources.append("src/emulator/vm/scsi_host.cpp")
+    sources.append("src/emulator/vm/ym2151.cpp")
+    sources.append("src/emulator/vm/z80.cpp")
+    sources.append("src/emulator/vm/z80ctc.cpp")
+    sources.append("src/emulator/vm/z80sio.cpp")
+    sources.append("src/emulator/vm/mcs48.cpp")
+    sources.append("src/emulator/vm/upd1990a.cpp")
+    sources.append("src/emulator/vm/disk.cpp")
+    sources.append("src/emulator/vm/harddisk.cpp")
+    sources.append("src/emulator/vm/i8255.cpp")
+    if lenv["emu"] == "x1t":
+        sources.append("src/emulator/vm/z80dma.cpp")
+    add_sources(sources, "src/emulator/vm/x1")
+
+if env["platform"] == "macos":
+    library = env.SharedLibrary(
+        "godotemu/bin/libgdemu.{}.{}.framework/libgdemu.{}.{}".format(
+            env["platform"], env["target"], env["platform"], env["target"]
+        ),
+        source=sources,
+    )
+else:
+    library = env.SharedLibrary(
+        "godotemu/bin/libgdemu{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
+
+Default(library)

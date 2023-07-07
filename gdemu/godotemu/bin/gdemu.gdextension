@@ -1,0 +1,9 @@
+[configuration]
+
+entry_symbol = "gdemu_library_init"
+compatibility_minimum = 4.1
+
+[libraries]
+macos="res://bin/libgdemu.macos.template_debug.framework"
+
+
