@@ -1,22 +1,22 @@
-[gd_scene load_steps=4 format=3 uid="uid://derh84wbjxu1"]
+[gd_scene load_steps=3 format=3 uid="uid://u86qtlo16rrq"]
 
-[ext_resource type="Texture2D" uid="uid://c1qvlxydg7hyb" path="res://icon.png" id="2_6dk67"]
 [ext_resource type="Script" path="res://Main.gd" id="3"]
 
-[sub_resource type="AudioStreamGenerator" id="AudioStreamGenerator_hog2b"]
+[sub_resource type="AudioStreamGenerator" id="1"]
 mix_rate = 62500.0
-buffer_length = 0.1
+buffer_length = 0.05
 
 [node name="Main" type="Node"]
 script = ExtResource("3")
 is_disk_encrypt = false
+drivea_path = "res://ldsys.d88"
 
 [node name="Emulator" type="GDEmu" parent="."]
-texture = ExtResource("2_6dk67")
+process_priority = 3
 centered = false
 
 [node name="AudioPlayer" type="AudioStreamPlayer" parent="."]
-stream = SubResource("AudioStreamGenerator_hog2b")
+stream = SubResource("1")
 
 [node name="Control" type="Control" parent="."]
 layout_mode = 3
@@ -51,6 +51,3 @@ offset_top = -12.0
 offset_right = -8.0
 offset_bottom = -4.0
 color = Color(1, 0, 0, 0.501961)
-
-[node name="EmuScreen" type="Sprite2D" parent="."]
-visible = false

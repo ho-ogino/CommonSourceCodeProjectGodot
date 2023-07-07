@@ -221,7 +221,7 @@ int16_t DLL_PREFIX ExchangeEndianS16(uint16_t x)
 	return __o.sw;
 }
 
-#ifndef _MSC_VER
+#if !defined(_MSC_VER) || defined(NOMINMAX)
 int DLL_PREFIX max(int a, int b)
 {
 	if(a > b) {

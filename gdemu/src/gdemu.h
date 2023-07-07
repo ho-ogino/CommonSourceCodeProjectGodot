@@ -47,6 +47,7 @@ private:
     int sound_play_point;
     String drivea_path;
     String driveb_path;
+    bool initialized = false;
 public:
 //    static void _bind_methods();
 

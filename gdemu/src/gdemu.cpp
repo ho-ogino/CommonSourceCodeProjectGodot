@@ -173,10 +173,15 @@ void GDEmu::init() {
         pScrArray->set(i+1, 0);
         pScrArray->set(i+2, 0);
     }
+    initialized = true;
 }
 
 
 void GDEmu::_process(double delta) {
+    if(!initialized)
+    {
+        return;
+    }
     time_passed += delta;
 
     // 誤差は……気にしない……(気になる)

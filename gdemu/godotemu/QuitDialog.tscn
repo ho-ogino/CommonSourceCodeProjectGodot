@@ -1,22 +1,14 @@
-[gd_scene load_steps=3 format=3 uid="uid://cwbntgwnll8fi"]
+[gd_scene load_steps=3 format=3 uid="uid://dx0n5ays50o64"]
 
 [ext_resource type="Script" path="res://Scripts/QuitDialog.gd" id="1"]
-[ext_resource type="Theme" uid="uid://lf2rcewpidry" path="res://Theme/kenneyUI.tres" id="2"]
+[ext_resource type="Theme" uid="uid://dhtldh3f23tle" path="res://Theme/kenneyUI.tres" id="2"]
 
 [node name="QuitDialog" type="Popup"]
-process_mode = 2
-initial_position = 2
+process_mode = 3
 size = Vector2i(300, 100)
 visible = true
 theme = ExtResource("2")
 script = ExtResource("1")
-
-[node name="Panel" type="Panel" parent="."]
-modulate = Color(0.321569, 0.321569, 0.321569, 1)
-custom_minimum_size = Vector2(300, 100)
-offset_right = 40.0
-offset_bottom = 40.0
-theme = ExtResource("2")
 
 [node name="Label" type="Label" parent="."]
 offset_left = 5.0
