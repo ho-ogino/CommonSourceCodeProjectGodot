@@ -10,6 +10,11 @@ visible = true
 theme = ExtResource("2")
 script = ExtResource("1")
 
+[node name="Panel" type="Panel" parent="."]
+modulate = Color(0.258824, 0.258824, 0.258824, 1)
+offset_right = 300.0
+offset_bottom = 100.0
+
 [node name="Label" type="Label" parent="."]
 offset_left = 5.0
 offset_top = 18.0
