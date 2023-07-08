@@ -17,7 +17,13 @@
 #endif
 
 #ifndef LONG_PTR
-#define LONG_PTR long*
+
+#if defined(__LP64__) || defined(_WIN64)
+ typedef int64_t LONG_PTR; 
+#else
+ typedef int32_t LONG_PTR;
+#endif
+
 #endif
 
 void encrypt_disk(const _TCHAR *path);
