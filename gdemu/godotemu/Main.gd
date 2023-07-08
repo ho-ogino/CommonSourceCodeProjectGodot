@@ -13,6 +13,9 @@ extends Node
 
 var popup: Window
 
+const border_width = 16
+const border_height = 16
+
 # x1
 var screen_width = 640.0
 var screen_height = 400.0
@@ -71,8 +74,12 @@ func _fill_buffer():
 func _ready() -> void:
 	# ウィンドウサイズを設定する(現状常に初期状態に戻る)
 #	get_tree().set_screen_stretch(SceneTree.stretch_mode.STRETCH_MODE_2D,SceneTree.STRETCH_ASPECT_KEEP, Vector2(window_width_aspect + 16,screen_height + 32), 1)
+	var viewport_width = window_width_aspect + border_width
+	var viewport_height = screen_height + border_height + 16
+
+	get_tree().root.content_scale_size = Vector2(viewport_width, viewport_height)
+	get_tree().root.size = Vector2(viewport_width, viewport_height)
 	get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-	get_tree().root.size = Vector2(window_width_aspect + 16,screen_height + 32)
 	emulator.initialize()
 
 	load_config()
@@ -80,10 +87,8 @@ func _ready() -> void:
 	get_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN if (is_fullscreen) else Window.MODE_WINDOWED
 
 	Engine.max_fps = 0
-	
-	screen_width += 16
-	screen_height += 16
-	screenImage = Image.create(screen_width, screen_height, false, Image.FORMAT_RGB8)
+
+	screenImage = Image.create(screen_width + border_width, screen_height + border_width, false, Image.FORMAT_RGB8)
 	screenImageTexture = ImageTexture.create_from_image(screenImage)
 #	screenImageTexture.set_image(screenImage)
 #	eset_size_override(Vector2(screen_width, screen_height))
@@ -128,7 +133,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	var data = emulator.get_data()
 	# screenImage.data.data = data
-	screenImage.set_data(screen_width, screen_height, false, Image.FORMAT_RGB8, data)
+	screenImage.set_data(screen_width + border_width, screen_height + border_width, false, Image.FORMAT_RGB8, data)
 	screenImageTexture.update(screenImage)
 	emulator.texture = screenImageTexture
 	_fill_buffer()
