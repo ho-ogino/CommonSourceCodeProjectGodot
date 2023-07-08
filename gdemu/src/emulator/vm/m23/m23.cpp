@@ -61,6 +61,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 //	apu = new AM9511(this, emu);
 	crtc = new HD46505(this, emu);
 	io = new IO(this, emu);
+	io->space = 0x100;
 	fdc = new MB8877(this, emu);
 	fdc->set_context_noise_seek(new NOISE(this, emu));
 	fdc->set_context_noise_head_down(new NOISE(this, emu));
@@ -85,6 +86,8 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	floppy = new FLOPPY(this, emu);
 	keyboard = new KEYBOARD(this, emu);
 	memory = new MEMBUS(this, emu);
+	memory->space = 0x10000;
+	memory->bank_size = 0x800;
 	
 	// set contexts
 	event->set_context_cpu(cpu);
@@ -133,6 +136,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	display->set_vram_ptr(memory->get_vram());
 	display->set_regs_ptr(crtc->get_regs());
 	floppy->set_context_fdc(fdc);
+	memory->set_context_cpu(cpu);
 	
 	// cpu bus
 	cpu->set_context_mem(memory);

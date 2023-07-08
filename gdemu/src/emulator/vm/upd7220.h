@@ -36,6 +36,7 @@ private:
 	DEVICE* d_vram_bus;
 	uint8_t* vram;
 	uint32_t vram_size;
+	uint32_t plane_size;
 	uint16_t vram_data_mask;
 	
 	// regs
@@ -51,7 +52,7 @@ private:
 	uint8_t zoom, zr, zw;
 	uint8_t ra[16];
 	uint8_t cs[3];
-	uint8_t pitch;
+	uint8_t pitch, pitch2;
 	uint32_t lad;
 	uint8_t vect[11];
 	int ead, dad;
@@ -65,7 +66,6 @@ private:
 	int blink_rate;
 	bool low_high;
 	bool cmd_write_done;
-	int width;
 	
 	int cpu_clocks;
 #ifdef UPD7220_HORIZ_FREQ
@@ -81,9 +81,11 @@ private:
 	
 	// draw
 	int rt[RT_TABLEMAX + 1];
-	int dx, dy;	// from ead, dad
+	int dx, dy, plane;	// from ead, dad
 	int dir, dif, sl, dc, d, d2, d1, dm;
+	uint8_t dgd;
 	uint16_t pattern;
+	uint8_t egc_access;
 	
 	// command
 	void check_cmd();
@@ -113,8 +115,10 @@ private:
 	void cmd_unk_5a();
 	
 	void cmd_write_sub(uint32_t addr, uint8_t data);
-	void write_vram(uint32_t addr, uint8_t data);
-	uint8_t read_vram(uint32_t addr);
+	void write_vram_byte(uint32_t addr, uint8_t data);
+	uint8_t read_vram_byte(uint32_t addr);
+	void write_vram_word(uint32_t addr, uint16_t data);
+	uint16_t read_vram_word(uint32_t addr);
 	void update_vect();
 	void reset_vect();
 	
@@ -132,8 +136,9 @@ public:
 		initialize_output_signals(&outputs_vsync);
 		d_vram_bus = NULL;
 		vram = NULL;
+		vram_size = plane_size = 0;
 		vram_data_mask = 0xffff;
-		width = 80;
+		egc_access = false;
 		set_device_name(_T("uPD7220 GDC"));
 	}
 	~UPD7220() {}
@@ -182,9 +187,9 @@ public:
 		set_vram_bus_ptr(device, size);
 		vram_data_mask = mask;
 	}
-	void set_screen_width(int value)
+	void set_plane_size(uint32_t size)
 	{
-		width = value;
+		plane_size = size;
 	}
 #ifdef UPD7220_HORIZ_FREQ
 	void set_horiz_freq(int freq)
@@ -196,9 +201,13 @@ public:
 	{
 		return sync;
 	}
-	uint8_t* get_zoom()
+	uint8_t get_zoom()
 	{
-		return &zoom;
+		return zoom;
+	}
+	uint8_t get_pitch()
+	{
+		return pitch;
 	}
 	uint8_t* get_ra()
 	{
@@ -208,9 +217,9 @@ public:
 	{
 		return cs;
 	}
-	int* get_ead()
+	int get_ead()
 	{
-		return &ead;
+		return ead;
 	}
 	bool get_start()
 	{
@@ -222,6 +231,10 @@ public:
 	bool attr_blink()
 	{
 		return (blink_attr < (blink_rate * 3 / 4));
+	}
+	void set_egc_access(uint8_t value)
+	{
+		egc_access = value;
 	}
 };
 

@@ -31,18 +31,16 @@ class DISPLAY : public DEVICE
 private:
 	DEVICE *d_pic;
 	UPD7220 *d_gdc_chr, *d_gdc_gfx;
-	uint8_t *ra_chr;
-	uint8_t *ra_gfx, *cs_gfx;
 	
 	uint8_t tvram[0x4000];
 #if !defined(SUPPORT_HIRESO)
 #if !defined(SUPPORT_2ND_VRAM)
-	__DECL_ALIGNED(4) uint8_t vram[0x20000];
+	/*__DECL_ALIGNED(4)*/ uint8_t vram[0x20000];
 #else
-	__DECL_ALIGNED(4) uint8_t vram[0x40000];
+	/*__DECL_ALIGNED(4)*/ uint8_t vram[0x40000];
 #endif
 #else
-	__DECL_ALIGNED(4) uint8_t vram[0x80000];
+	/*__DECL_ALIGNED(4)*/ uint8_t vram[0x80000];
 #endif
 	
 #if defined(SUPPORT_2ND_VRAM) && !defined(SUPPORT_HIRESO)
@@ -73,7 +71,7 @@ private:
 #endif
 #if defined(SUPPORT_GRCG)
 	uint8_t grcg_mode, grcg_tile_ptr, grcg_tile[4];
-	__DECL_ALIGNED(16) uint16_t grcg_tile_word[4];
+	/*__DECL_ALIGNED(16)*/ uint16_t grcg_tile_word[4];
 #endif
 #if defined(SUPPORT_EGC)
 	typedef union {
@@ -132,9 +130,13 @@ private:
 	uint16_t font_code;
 	uint8_t font_line;
 //	uint16_t font_lr;
+	bool hireso;
 	
 	uint8_t screen_chr[SCREEN_HEIGHT][SCREEN_WIDTH + 1];
 	uint8_t screen_gfx[SCREEN_HEIGHT][SCREEN_WIDTH];
+	uint8_t scroll_tmp[6];
+	uint8_t tvram_tmp[0x4000];
+	int draw_width, draw_height;
 	
 #if !defined(SUPPORT_HIRESO)
 	void kanji_copy(uint8_t *dst, uint8_t *src, int from, int to);
@@ -210,15 +212,18 @@ public:
 	void reset();
 	void release();
 	void event_frame();
+	void event_vline(int v, int clock);
 	void write_io8(uint32_t addr, uint32_t data);
 	uint32_t read_io8(uint32_t addr);
 	void write_memory_mapped_io8(uint32_t addr, uint32_t data);
-	void write_memory_mapped_io16(uint32_t addr, uint32_t data);
 	uint32_t read_memory_mapped_io8(uint32_t addr);
+	void write_memory_mapped_io16(uint32_t addr, uint32_t data);
 	uint32_t read_memory_mapped_io16(uint32_t addr);
+	void write_memory_mapped_io16w(uint32_t addr, uint32_t data, int *wait);
+	uint32_t read_memory_mapped_io16w(uint32_t addr, int *wait);
 	void write_dma_io8(uint32_t addr, uint32_t data);
-	void write_dma_io16(uint32_t addr, uint32_t data);
 	uint32_t read_dma_io8(uint32_t addr);
+	void write_dma_io16(uint32_t addr, uint32_t data);
 	uint32_t read_dma_io16(uint32_t addr);
 	bool process_state(FILEIO* state_fio, bool loading);
 	
@@ -227,19 +232,21 @@ public:
 	{
 		d_pic = device;
 	}
-	void set_context_gdc_chr(UPD7220 *device, uint8_t *ra)
+	void set_context_gdc_chr(UPD7220 *device)
 	{
 		d_gdc_chr = device;
-		ra_chr = ra;
 	}
-	void set_context_gdc_gfx(UPD7220 *device, uint8_t *ra, uint8_t *cs)
+	void set_context_gdc_gfx(UPD7220 *device)
 	{
 		d_gdc_gfx = device;
-		ra_gfx = ra; cs_gfx = cs;
 	}
-	void sound_bios_ok()
+	void set_memsw_4(uint8_t value)
 	{
-		tvram[0x3fee] = 8;
+		tvram[0x3fee] = value;
+	}
+	uint8_t get_memsw_4()
+	{
+		return tvram[0x3fee];
 	}
 	void draw_screen();
 };

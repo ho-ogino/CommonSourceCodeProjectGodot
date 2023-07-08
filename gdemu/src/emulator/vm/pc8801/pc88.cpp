@@ -32,6 +32,10 @@
 #include "../scsi_host.h"
 #endif
 
+#ifdef SUPPORT_PC88_16BIT
+#include "../i8255.h"
+#endif
+
 #define DEVICE_JOYSTICK	0
 #define DEVICE_MOUSE	1
 #define DEVICE_JOYMOUSE	2	// not supported yet
@@ -71,7 +75,7 @@
 #else
 #define Port31_HCOLOR	false
 #endif
-#ifdef PC8801SR_VARIANT
+#ifdef PC8801_VARIANT
 #define Port31_400LINE	!(port[0x31] & 0x11)
 #else
 #define Port31_400LINE	false
@@ -138,6 +142,10 @@
 #define Port53_G3DS	(port[0x53] & 0x10)	// PC-8001
 #define Port53_G4DS	(port[0x53] & 0x20)	// PC-8001
 #define Port53_G5DS	(port[0x53] & 0x40)	// PC-8001
+#endif
+
+#ifdef SUPPORT_PC88_16BIT
+#define Port82_BOOT16	(!(port[0x82] & 0x01))
 #endif
 
 #if defined(PC8801_VARIANT)
@@ -304,6 +312,10 @@ void PC88::initialize()
 	memset(cdbios, 0xff, sizeof(cdbios));
 	cdbios_loaded = false;
 #endif
+#ifdef SUPPORT_PC88_16BIT
+	memset(boot_16bit, 0xff, sizeof(boot_16bit));
+	boot_16bit_loaded = false;
+#endif
 #endif
 	
 	// load rom images
@@ -430,6 +442,15 @@ void PC88::initialize()
 		cdbios_loaded = true;
 	}
 #endif
+#ifdef SUPPORT_PC88_16BIT
+	if(config.dipswitch & DIPSWITCH_16BIT) {
+		if(fio->Fopen(create_local_path(_T("PC-8801-16_Z80.ROM")), FILEIO_READ_BINARY)) {
+			fio->Fread(boot_16bit, 0x2000, 1);
+			fio->Fclose();
+			boot_16bit_loaded = true;
+		}
+	}
+#endif
 #endif
 	delete fio;
 	
@@ -510,7 +531,7 @@ void PC88::initialize()
 	register_event(this, EVENT_TIMER, 1000000.0 / 600.0, true, NULL);
 	register_event(this, EVENT_BEEP, 1000000.0 / 4800.0, true, NULL);
 	
-#if defined(PC8801SR_VARIANT)
+#if defined(PC8801_VARIANT)
 	// hack to update config.scan_line at first
 	hireso = !(config.monitor_type == 0);
 #else
@@ -529,7 +550,7 @@ void PC88::release()
 
 void PC88::reset()
 {
-#if defined(PC8801SR_VARIANT)
+#if defined(PC8801_VARIANT)
 	bool value = (config.monitor_type == 0);
 	if(hireso != value) {
 		// update config.scan_line when config.monitor_type is changed
@@ -696,6 +717,10 @@ void PC88::reset()
 	}
 	cdda_volume = 100.0;
 	d_scsi_cdrom->set_volume((int)cdda_volume);
+#endif
+#ifdef SUPPORT_PC88_16BIT
+	porta_16bit = 0;
+	portc_16bit = 0x80; // OBF_A(PC7)=1, IBF_B(PC1)=0
 #endif
 #ifdef NIPPY_PATCH
 	// dirty patch for NIPPY
@@ -1254,6 +1279,22 @@ void PC88::write_io8(uint32_t addr, uint32_t data)
 	case 0x78:
 		Port70_TEXTWND++;
 		break;
+#ifdef SUPPORT_PC88_16BIT
+	case 0x80:
+		if(d_pio_16bit != NULL) {
+			d_pio_16bit->write_signal(SIG_I8255_PORT_C, 0x04, 0x04); // STB_B(PC2): H->L->H
+			d_pio_16bit->write_signal(SIG_I8255_PORT_B, data, 0xff);
+			d_pio_16bit->write_signal(SIG_I8255_PORT_C, 0x00, 0x04);
+			d_pio_16bit->write_signal(SIG_I8255_PORT_C, 0x04, 0x04);
+		}
+		break;
+	case 0x82:
+		if(boot_16bit_loaded && (mod & 0x01)) {
+			update_low_write();
+			update_low_read();
+		}
+		break;
+#endif
 #ifdef SUPPORT_PC88_HMB20
 	case 0x88:
 	case 0x89:
@@ -1567,6 +1608,15 @@ uint32_t PC88::read_io8_debug(uint32_t addr)
 		if(addr == 0x0e) {
 			val &= ~0x80; // http://www.maroon.dti.ne.jp/youkan/pc88/iomap.html
 		}
+/*
+#ifdef SUPPORT_PC88_16BIT
+		if(boot_16bit_loaded && Port82_BOOT16) {
+			if(addr == 0x08 && d_cpu->get_pc() == 0x0004) {
+				val &= ~0x10;
+			}
+		}
+#endif
+*/
 		return val;
 	case 0x20:
 	case 0x21:
@@ -1693,6 +1743,24 @@ uint32_t PC88::read_io8_debug(uint32_t addr)
 #if defined(_PC8001SR) || defined(PC8801_VARIANT)
 	case 0x71:
 		return port[0x71];
+#endif
+#ifdef SUPPORT_PC88_16BIT
+	case 0x80:
+		if(d_pio_16bit != NULL) {
+			d_pio_16bit->write_signal(SIG_I8255_PORT_C, 0x40, 0x40); // ACK_A(PC6): H->L->H
+			val = porta_16bit;
+			d_pio_16bit->write_signal(SIG_I8255_PORT_C, 0x00, 0x40);
+			d_pio_16bit->write_signal(SIG_I8255_PORT_C, 0x40, 0x40);
+			return val;
+		}
+		break;
+	case 0x81:
+		if(d_pio_16bit != NULL) {
+			// bit0: OBF_A(PC7)
+			// bit1: IBF_B(PC1)
+			return ((portc_16bit >> 7) & 0x01) | (portc_16bit & 0x02);
+		}
+		break;
 #endif
 #ifdef SUPPORT_PC88_HMB20
 //	case 0x88:
@@ -2182,6 +2250,16 @@ void PC88::update_n80_read()
 #else
 void PC88::update_low_read()
 {
+	update_low_read_sub();
+#ifdef SUPPORT_PC88_16BIT
+	if(boot_16bit_loaded && Port82_BOOT16) {
+		SET_BANK_R(0x0000, 0x1fff, boot_16bit);
+	}
+#endif
+}
+
+void PC88::update_low_read_sub()
+{
 #if defined(PC88_EXRAM_BANKS)
 	if(PortE2_RDEN) {
 		if(PortE3_ERAMSL < PC88_EXRAM_BANKS) {
@@ -2227,6 +2305,16 @@ void PC88::update_low_read()
 }
 
 void PC88::update_low_write()
+{
+	update_low_write_sub();
+#ifdef SUPPORT_PC88_16BIT
+	if(boot_16bit_loaded && Port82_BOOT16) {
+		SET_BANK_W(0x0000, 0x1fff, wdmy);
+	}
+#endif
+}
+
+void PC88::update_low_write_sub()
 {
 #if defined(PC88_EXRAM_BANKS)
 	if(PortE2_WREN) {
@@ -2323,6 +2411,12 @@ void PC88::write_signal(int id, uint32_t data, uint32_t mask)
 		} else {
 			// send to rs-232c
 		}
+#ifdef SUPPORT_PC88_16BIT
+	} else if(id == SIG_PC88_16BIT_PORTA) {
+		porta_16bit = (data & mask) | (porta_16bit & ~mask);
+	} else if(id == SIG_PC88_16BIT_PORTC) {
+		portc_16bit = (data & mask) | (portc_16bit & ~mask);
+#endif
 	}
 }
 
@@ -2476,7 +2570,7 @@ void PC88::event_vline(int v, int clock)
 		memcpy(prev_port, port, sizeof(port));
 	}
 	// update palette
-#if defined(PC8801SR_VARIANT)
+#if defined(PC8801_VARIANT)
 	if(v < (disp_line <= 200 ? 200 : 400)) {
 #else
 	if(v < 200) {
@@ -2753,7 +2847,6 @@ void PC88::draw_screen()
 	if(Port31_HCOLOR) {
 		disp_color_graph = draw_640x200_color_graph();
 		emu->set_vm_screen_lines(200);
-#if defined(PC8801SR_VARIANT)
 	} else if(Port31_400LINE) {
 		if(hireso) {
 			draw_scanline_black = false;
@@ -2761,7 +2854,6 @@ void PC88::draw_screen()
 		draw_640x400_attrib_graph();
 //		draw_640x400_mono_graph();
 		emu->set_vm_screen_lines(400);
-#endif
 	} else {
 		if(hireso) {
 			draw_scanline_black = false;
@@ -2777,7 +2869,7 @@ void PC88::draw_screen()
 #endif
 	
 	// create palette for each scanline
-#if defined(PC8801SR_VARIANT)
+#if defined(PC8801_VARIANT)
 	int disp_line = crtc.height * crtc.char_height;
 	int ymax = (disp_line <= 200) ? 200 : 400;
 #else
@@ -2846,7 +2938,7 @@ void PC88::draw_screen()
 	}
 	
 	// copy to screen buffer
-#if defined(PC8801SR_VARIANT)
+#if defined(PC8801_VARIANT)
 #if defined(SUPPORT_PC88_VAB)
 	// X88000
 	if(PortB4_VAB_DISP) {
@@ -3042,10 +3134,15 @@ void PC88::draw_text()
 //		memset(crtc.attrib.expand, 2, 200 * 80);
 	}
 	
-	// for Xak2 opening
-	memset(text, 8, sizeof(text));
+	// for PDDOS and Xak2 opening
 	memset(text_color, 7, sizeof(text_color));
 	memset(text_reverse, 0, sizeof(text_reverse));
+	
+	if(dmac.ch[3].count.sd == 0) {
+		memset(text, 0, sizeof(text));
+		return;
+	}
+	memset(text, 8, sizeof(text));
 	
 	int char_height = crtc.char_height;
 	uint8_t color_mask = Port30_COLOR ? 0 : 7;
@@ -3472,7 +3569,7 @@ void PC88::draw_640x200_attrib_graph()
 	}
 }
 
-#if defined(PC8801SR_VARIANT)
+#if defined(PC8801_VARIANT)
 void PC88::draw_640x400_mono_graph()
 {
 	if(!Port31_GRAPH || (Port53_G0DS && Port53_G1DS)) {
@@ -3953,6 +4050,9 @@ void pc88_dmac_t::write_io8(uint32_t addr, uint32_t data)
 		high_low = !high_low;
 		break;
 	case 0x08:
+		if(!(data & 0x80)) {
+			status &= ~0x10;
+		}
 		mode = data;
 		high_low = false;
 		break;
@@ -4022,6 +4122,7 @@ void pc88_dmac_t::run(int c, int nbytes)
 			ch[c].addr.sd++;
 			ch[c].count.sd--;
 			nbytes--;
+			status &= ~0x10;
 		}
 		if(ch[c].count.sd < 0) {
 			finish(c);
@@ -4044,11 +4145,13 @@ void pc88_dmac_t::finish(int c)
 			}
 			ch[c].addr.sd++;
 			ch[c].count.sd--;
+			status &= ~0x10;
 		}
 		if((mode & 0x80) && c == 2) {
 			ch[2].addr.sd = ch[3].addr.sd;
 			ch[2].count.sd = ch[3].count.sd;
 //			ch[2].mode = ch[3].mode;
+			status |= 0x10;
 		} else if(mode & 0x40) {
 			mode &= ~(1 << c);
 		}
@@ -4057,7 +4160,7 @@ void pc88_dmac_t::finish(int c)
 	}
 }
 
-#define STATE_VERSION	13
+#define STATE_VERSION	14
 
 bool PC88::process_state(FILEIO* state_fio, bool loading)
 {
@@ -4233,6 +4336,10 @@ bool PC88::process_state(FILEIO* state_fio, bool loading)
 #ifdef SUPPORT_PC88_CDROM
 	state_fio->StateValue(cdda_register_id);
 	state_fio->StateValue(cdda_volume);
+#endif
+#ifdef SUPPORT_PC88_16BIT
+	state_fio->StateValue(porta_16bit);
+	state_fio->StateValue(portc_16bit);
 #endif
 #ifdef NIPPY_PATCH
 	state_fio->StateValue(nippy_patch);

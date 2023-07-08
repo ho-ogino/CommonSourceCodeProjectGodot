@@ -64,7 +64,9 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	pit1->set_device_name(_T("8253 PIT (Sound/SIO)"));
 	pio = new I8255(this, emu);
 	pic = new I8259(this, emu);
+	pic->num_chips = 2;
 	io = new IO(this, emu);
+	io->space = 0x100;
 	pcm = new PCM1BIT(this, emu);
 	gdc = new UPD7220(this, emu);
 	fdc = new UPD765A(this, emu);
@@ -88,12 +90,14 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	event->set_context_sound(fdc->get_context_noise_head_up());
 	
 	rtc->set_context_intr(pic, SIG_I8259_IR2 | SIG_I8259_CHIP1, 1);
+	dma0->set_context_cpu(cpu);
 	dma0->set_context_memory(memory);
 	dma0->set_context_ch0(fdc);
 	dma0->set_context_ch1(gdc);
 #ifdef SINGLE_MODE_DMA
 	dma0->set_context_child_dma(dma1);
 #endif
+	dma1->set_context_cpu(cpu);
 	dma1->set_context_memory(memory);
 	pit0->set_context_ch0(memory, SIG_MEMORY_PCM, 1);
 	pit0->set_context_ch1(pic, SIG_I8259_IR5 | SIG_I8259_CHIP1, 1);
@@ -125,11 +129,6 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 //	sio->set_rx_clock(1, 9600 * 16);	// clock is from 8253 ch2 (1.9968MHz/13)
 	
 	display->set_context_gdc(gdc);
-	display->set_sync_ptr(gdc->get_sync());
-	display->set_zoom_ptr(gdc->get_zoom());
-	display->set_ra_ptr(gdc->get_ra());
-	display->set_cs_ptr(gdc->get_cs());
-	display->set_ead_ptr(gdc->get_ead());
 	floppy->set_context_fdc(fdc);
 	floppy->set_context_mem(memory);
 	keyboard->set_context_sio(sio);

@@ -87,6 +87,7 @@
 	#define SUPPORT_PC88_OPN2
 	#define SUPPORT_PC88_JAST
 	#define SUPPORT_PC88_FDD_8INCH
+	#define SUPPORT_PC88_16BIT
 	#define SUPPORT_M88_DISKDRV
 #elif defined(_PC8801)
 	#define SUPPORT_PC88_KANJI1
@@ -94,6 +95,7 @@
 	#define SUPPORT_PC88_OPN2
 	#define SUPPORT_PC88_JAST
 	#define SUPPORT_PC88_FDD_8INCH
+	#define SUPPORT_PC88_16BIT
 	#define SUPPORT_M88_DISKDRV
 #elif defined(_PC8001SR)
 	#define SUPPORT_PC88_KANJI1
@@ -136,7 +138,6 @@
 #define SCSI_HOST_AUTO_ACK
 #define SCSI_DEV_IMMEDIATE_SELECT
 #endif
-#define Z80_MEMORY_WAIT
 #define OVERRIDE_SOUND_FREQ_48000HZ	55467
 
 // device informations for win32
@@ -163,6 +164,7 @@
 #define DIPSWITCH_FDD_8INCH	0x80
 #define DIPSWITCH_M88_DISKDRV	0x100
 #define DIPSWITCH_QUASIS88_CMT	0x200
+#define DIPSWITCH_16BIT		0x400
 #define DIPSWITCH_DEFAULT	(DIPSWITCH_HMB20 + DIPSWITCH_GSX8800 + DIPSWITCH_PCG8100 + DIPSWITCH_CMDSING + DIPSWITCH_FDD_5INCH)
 #define USE_JOYSTICK_TYPE	2
 #if defined(SUPPORT_PC88_FDD_8INCH)
@@ -242,7 +244,7 @@
 #else
 #define USE_PRINTER_TYPE	3
 #endif
-//#define USE_DEBUGGER
+#define USE_DEBUGGER
 #define USE_STATE
 
 #include "../../common.h"
@@ -325,8 +327,15 @@ class YM2151;
 class AY_3_891X;
 #endif
 
-#if defined(SUPPORT_PC88_GSX8800) || defined(SUPPORT_PC88_PCG8100)
+#if defined(SUPPORT_PC88_GSX8800) || defined(SUPPORT_PC88_PCG8100) || defined(SUPPORT_PC88_16BIT)
 class I8253;
+#endif
+
+#if defined(SUPPORT_PC88_16BIT)
+class I8259;
+class I86;
+class IO;
+class MEMORY;
 #endif
 
 #ifdef SUPPORT_M88_DISKDRV
@@ -393,6 +402,17 @@ protected:
 	PCM1BIT* pc88pcg_pcm1;
 	PCM1BIT* pc88pcg_pcm2;
 	PCM1BIT* pc88pcg_pcm3;
+#endif
+	
+#ifdef SUPPORT_PC88_16BIT
+	I8253* pc88pit_16bit;
+	I8255* pc88pio_16bit;
+	I8259* pc88pic_16bit;
+	I86* pc88cpu_16bit;
+	IO* pc88io_16bit;
+	MEMORY* pc88mem_16bit;
+	uint8_t pc88rom_16bit[0x1000];
+	uint8_t pc88ram_16bit[0x20000];
 #endif
 	
 #ifdef SUPPORT_M88_DISKDRV

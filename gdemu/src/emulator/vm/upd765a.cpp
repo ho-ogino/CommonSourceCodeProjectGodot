@@ -427,23 +427,9 @@ void UPD765A::write_signal(int id, uint32_t data, uint32_t mask)
 	} else if(id == SIG_UPD765A_TC) {
 		if(phase == PHASE_EXEC || phase == PHASE_READ || phase == PHASE_WRITE || phase == PHASE_SCAN || (phase == PHASE_RESULT && count == 7)) {
 			if(data & mask) {
-				if((phase == PHASE_READ  && ((command & 0x1f) == 0x06 || (command & 0x1f) == 0x0c) && count > 0) ||
-				   (phase == PHASE_WRITE && ((command & 0x1f) == 0x05 || (command & 0x1f) == 0x09) && count > 0)) {
-					if(status & S_RQM) {
-						if(no_dma_mode) {
-							write_signals(&outputs_irq, 0);
-						} else {
-							write_signals(&outputs_drq, 0);
-						}
-						status &= ~S_RQM;
-					}
-					CANCEL_EVENT();
-					REGISTER_PHASE_EVENT_NEW(PHASE_TC, disk[hdu & DRIVE_MASK]->get_usec_per_bytes(count));
-				} else {
-					prevphase = phase;
-					phase = PHASE_TC;
-					process_cmd(command & 0x1f);
-				}
+				prevphase = phase;
+				phase = PHASE_TC;
+				process_cmd(command & 0x1f);
 			}
 		}
 	} else if(id == SIG_UPD765A_MOTOR) {
@@ -486,7 +472,6 @@ void UPD765A::event_callback(int event_id, int err)
 {
 	if(event_id == EVENT_PHASE) {
 		phase_id = -1;
-		prevphase = phase;
 		phase = event_phase;
 		process_cmd(command & 0x1f);
 	} else if(event_id == EVENT_DRQ) {
@@ -701,11 +686,6 @@ uint8_t UPD765A::get_devstat(int drv)
 	if(drv >= MAX_DRIVE) {
 		return ST3_FT | drv;
 	}
-	// XM8 version 1.20
-	if(force_ready && !disk[drv]->inserted) {
-		return drv;
-	}
-//	return drv | ((fdc[drv].track & 1) ? ST3_HD : 0) | (disk[drv]->inserted && disk[drv]->two_side ? ST3_TS : 0) | (fdc[drv].track ? 0 : ST3_T0) | (force_ready || disk[drv]->inserted ? ST3_RY : 0) | (disk[drv]->write_protected ? ST3_WP : 0);
 	return drv | ((fdc[drv].track & 1) ? ST3_HD : 0) | ST3_TS | (fdc[drv].track ? 0 : ST3_T0) | (force_ready || disk[drv]->inserted ? ST3_RY : 0) | (disk[drv]->write_protected ? ST3_WP : 0);
 }
 
@@ -1054,13 +1034,15 @@ void UPD765A::read_diagnostic()
 		shift_to_result7();
 		return;
 	}
-	if((command & 0x40) != (disk[drv]->track_mfm ? 0x40 : 0)) {
-//		result = ST1_ND;
-		result = ST0_AT | ST1_MA;
-		shift_to_result7();
-		return;
-	}
-	if(disk[drv]->get_sector(trk, side, 0)) {
+	bool found = false;
+	for(int i = 0; i < disk[drv]->sector_num.sd; i++) {
+		if(!disk[drv]->get_sector(trk, side, i)) {
+			continue;
+		}
+		if((command & 0x40) != (disk[drv]->sector_mfm ? 0x40 : 0)) {
+			continue;
+		}
+		found = true;
 #if 0
 		if(disk[drv]->id[0] != id[0] || disk[drv]->id[1] != id[1] || disk[drv]->id[2] != id[2] /*|| disk[drv]->id[3] != id[3]*/) {
 #else
@@ -1068,6 +1050,13 @@ void UPD765A::read_diagnostic()
 #endif
 			result = ST1_ND;
 		}
+		break;
+	}
+	if(!found) {
+//		result = ST1_ND;
+		result = ST0_AT | ST1_MA;
+		shift_to_result7();
+		return;		
 	}
 	
 	// FIXME: we need to consider the case that the first sector does not have a data field
@@ -1093,9 +1082,6 @@ uint32_t UPD765A::read_sector()
 #endif
 		return ST0_AT | ST1_MA;
 	}
-	if((command & 0x40) != (disk[drv]->track_mfm ? 0x40 : 0)) {
-		return ST0_AT | ST1_MA;
-	}
 	int secnum = disk[drv]->sector_num.sd;
 	if(!secnum) {
 #ifdef _FDC_DEBUG_LOG
@@ -1106,6 +1092,9 @@ uint32_t UPD765A::read_sector()
 	int cy = -1;
 	for(int i = 0; i < secnum; i++) {
 		if(!disk[drv]->get_sector(trk, side, i)) {
+			continue;
+		}
+		if((command & 0x40) != (disk[drv]->sector_mfm ? 0x40 : 0)) {
 			continue;
 		}
 		cy = disk[drv]->id[0];
@@ -1124,8 +1113,11 @@ uint32_t UPD765A::read_sector()
 		}
 		// sector number is matched
 		if(disk[drv]->invalid_format) {
-			memset(buffer, disk[drv]->drive_mfm ? 0x4e : 0xff, sizeof(buffer));
-			memcpy(buffer, disk[drv]->sector, disk[drv]->sector_size.sd);
+			for(int j = 0; j < disk[drv]->sector_size.sd; j++) {
+				uint8_t mask = disk[drv]->unstable ? disk[drv]->unstable[j] : 0;
+				buffer[j] = (disk[drv]->sector[j] & ~mask) | (rand() & mask);
+			}
+			memset(buffer + disk[drv]->sector_size.sd, disk[drv]->drive_mfm ? 0x4e : 0xff, sizeof(buffer) - disk[drv]->sector_size.sd);
 		} else {
 			memcpy(buffer, disk[drv]->track + disk[drv]->data_position[i], disk[drv]->get_track_size() - disk[drv]->data_position[i]);
 			memcpy(buffer + disk[drv]->get_track_size() - disk[drv]->data_position[i], disk[drv]->track, disk[drv]->data_position[i]);
@@ -1143,7 +1135,10 @@ uint32_t UPD765A::read_sector()
 #ifdef _FDC_DEBUG_LOG
 	this->out_debug_log(_T("FDC: SECTOR NOT FOUND (TRK=%d SIDE=%d ID=%2x,%2x,%2x,%2x)\n"), trk, side, id[0], id[1], id[2], id[3]);
 #endif
-	if(cy != id[0] && cy != -1) {
+	if(cy == -1) {
+		return ST0_AT | ST1_MA;
+	}
+	if(cy != id[0]) {
 		if(cy == 0xff) {
 			return ST0_AT | ST1_ND | ST2_BC;
 		} else {
@@ -1208,9 +1203,6 @@ uint32_t UPD765A::find_id()
 	if(!disk[drv]->get_track(trk, side)) {
 		return ST0_AT | ST1_MA;
 	}
-	if((command & 0x40) != (disk[drv]->track_mfm ? 0x40 : 0)) {
-		return ST0_AT | ST1_MA;
-	}
 	int secnum = disk[drv]->sector_num.sd;
 	if(!secnum) {
 		return ST0_AT | ST1_MA;
@@ -1218,6 +1210,9 @@ uint32_t UPD765A::find_id()
 	int cy = -1;
 	for(int i = 0; i < secnum; i++) {
 		if(!disk[drv]->get_sector(trk, side, i)) {
+			continue;
+		}
+		if((command & 0x40) != (disk[drv]->sector_mfm ? 0x40 : 0)) {
 			continue;
 		}
 		cy = disk[drv]->id[0];
@@ -1231,7 +1226,10 @@ uint32_t UPD765A::find_id()
 		fdc[drv].next_trans_position = disk[drv]->data_position[i];
 		return 0;
 	}
-	if(cy != id[0] && cy != -1) {
+	if(cy == -1) {
+		return ST0_AT | ST1_MA;
+	}
+	if(cy != id[0]) {
 		if(cy == 0xff) {
 			return ST0_AT | ST1_ND | ST2_BC;
 		} else {
@@ -1347,21 +1345,9 @@ void UPD765A::cmd_write_id()
 		fdc[hdu & DRIVE_MASK].next_trans_position = get_cur_position(hdu & DRIVE_MASK);
 		shift_to_write(4 * eot);
 		break;
+	case PHASE_TC:
 	case PHASE_WRITE:
 		REGISTER_PHASE_EVENT(PHASE_TIMER, 4000000);
-		break;
-	case PHASE_TC:
-#if 1
-		if((result = check_cond(true)) == 0) {
-			if(disk[hdu & DRIVE_MASK]->write_protected) {
-				result = ST0_AT | ST1_NW;
-			}
-		}
-		CANCEL_EVENT();
-		shift_to_result7();
-#else
-		REGISTER_PHASE_EVENT(PHASE_TIMER, 4000000);
-#endif
 		break;
 	case PHASE_TIMER:
 		// XM8 version 1.20
@@ -1385,9 +1371,6 @@ uint32_t UPD765A::read_id()
 	if(!disk[drv]->get_track(trk, side)) {
 		return ST0_AT | ST1_MA;
 	}
-	if((command & 0x40) != (disk[drv]->track_mfm ? 0x40 : 0)) {
-		return ST0_AT | ST1_MA;
-	}
 	int secnum = disk[drv]->sector_num.sd;
 	if(!secnum) {
 		return ST0_AT | ST1_MA;
@@ -1406,16 +1389,21 @@ uint32_t UPD765A::read_id()
 	}
 	for(int i = 0; i < secnum; i++) {
 		int index = (first_sector + i) % secnum;
-		if(disk[drv]->get_sector(trk, side, index)) {
-			id[0] = disk[drv]->id[0];
-			id[1] = disk[drv]->id[1];
-			id[2] = disk[drv]->id[2];
-			id[3] = disk[drv]->id[3];
-			fdc[drv].next_trans_position = disk[drv]->id_position[index] + 6;
-			return 0;
+		if(!disk[drv]->get_sector(trk, side, index)) {
+			continue;
 		}
+		if((command & 0x40) != (disk[drv]->sector_mfm ? 0x40 : 0)) {
+			continue;
+		}
+		id[0] = disk[drv]->id[0];
+		id[1] = disk[drv]->id[1];
+		id[2] = disk[drv]->id[2];
+		id[3] = disk[drv]->id[3];
+		fdc[drv].next_trans_position = disk[drv]->id_position[index] + 6;
+		return 0;
 	}
-	return ST0_AT | ST1_ND;
+//	return ST0_AT | ST1_ND;
+	return ST0_AT | ST1_MA;
 }
 
 uint32_t UPD765A::write_id()
@@ -1455,7 +1443,7 @@ void UPD765A::cmd_specify()
 		head_unload_time = buffer[1] >> 1;
 		no_dma_mode = ((buffer[1] & 1) != 0);
 		shift_to_idle();
-		status = 0x80;//0xff;
+		status = S_RQM;//0xff;
 		break;
 	}
 }
@@ -1801,10 +1789,12 @@ bool UPD765A::get_debug_regs_info(_TCHAR *buffer, size_t buffer_len)
 	
 	for(int i = 0; i < disk[drv]->sector_num.sd; i++) {
 		uint8_t c, h, r, n;
+		bool mfm;
 		int length;
-		if(disk[drv]->get_sector_info(-1, -1, i, &c, &h, &r, &n, &length)) {
+		if(disk[drv]->get_sector_info(-1, -1, i, &c, &h, &r, &n, &mfm, &length)) {
 			my_tcscat_s(buffer, buffer_len,
-			create_string(_T("\nSECTOR %2d: C=%02X H=%02X R=%02X N=%02X SIZE=%4d AM1=%5d DATA=%5d"), i + 1, c, h, r, n, length, disk[drv]->am1_position[i], disk[drv]->data_position[i]));
+			create_string(_T("\nSECTOR %2d: C=%02X H=%02X R=%02X N=%02X DENS=%s SIZE=%4d AM1=%5d DATA=%5d"),
+				i + 1, c, h, r, n, mfm ? "MFM" : " FM", length, disk[drv]->am1_position[i], disk[drv]->data_position[i]));
 			if(position >= disk[drv]->am1_position[i] && position < disk[drv]->data_position[i] + length) {
 				my_tcscat_s(buffer, buffer_len, _T(" <==="));
 			}

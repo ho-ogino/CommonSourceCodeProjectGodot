@@ -14,6 +14,7 @@
 //#ifdef _USE_QT
 //	#define USE_SHARED_DLL
 //#endif
+
 // use zlib to decompress gzip file???
 #ifdef _WIN32
 	#if defined(_MSC_VER) && (_MSC_VER >= 1500)
@@ -795,8 +796,6 @@ uint32_t DLL_PREFIX ExchangeEndianU32(uint32_t x);
 int32_t DLL_PREFIX ExchangeEndianS32(uint32_t x);
 uint16_t DLL_PREFIX ExchangeEndianU16(uint16_t x);
 int16_t DLL_PREFIX ExchangeEndianS16(uint16_t x);
-
-
 
 // max/min
 #if !defined(_MSC_VER) || defined(NOMINMAX)

@@ -82,6 +82,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	pit = new I8253(this, emu);
 	pio = new I8255(this, emu);
 	io = new IO(this, emu);
+	io->space = 0x100;
 	fdc = new MB8877(this, emu);	// mb8876
 	fdc->set_context_noise_seek(new NOISE(this, emu));
 	fdc->set_context_noise_head_down(new NOISE(this, emu));
@@ -98,6 +99,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	memory = new MEMORY(this, emu);
 	ramfile = new RAMFILE(this, emu);
 	qd = new QUICKDISK(this, emu);
+	qd->set_context_noise_seek(new NOISE(this, emu));
 	
 #if defined(_MZ800) || defined(_MZ1500)
 	and_snd = new AND(this, emu);
@@ -150,6 +152,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	event->set_context_sound(fdc->get_context_noise_seek());
 	event->set_context_sound(fdc->get_context_noise_head_down());
 	event->set_context_sound(fdc->get_context_noise_head_up());
+	event->set_context_sound(qd->get_context_noise_seek());
 	
 	// VRAM/PCG wait
 	memory->set_context_cpu(cpu);
@@ -296,7 +299,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	
 	// z80 family daisy chain
 	DEVICE* parent_dev = NULL;
-	int level = 0;
+	int level = 1;
 	
 	#define Z80_DAISY_CHAIN(dev) { \
 		if(parent_dev == NULL) { \
@@ -517,6 +520,8 @@ void VM::set_sound_device_volume(int ch, int decibel_l, int decibel_r)
 		fdc->get_context_noise_seek()->set_volume(0, decibel_l, decibel_r);
 		fdc->get_context_noise_head_down()->set_volume(0, decibel_l, decibel_r);
 		fdc->get_context_noise_head_up()->set_volume(0, decibel_l, decibel_r);
+	} else if(ch-- == 0) {
+		qd->get_context_noise_seek()->set_volume(0, decibel_l, decibel_r);
 	}
 }
 #endif
@@ -702,7 +707,7 @@ void VM::update_config()
 #endif
 }
 
-#define STATE_VERSION	4
+#define STATE_VERSION	5
 
 bool VM::process_state(FILEIO* state_fio, bool loading)
 {

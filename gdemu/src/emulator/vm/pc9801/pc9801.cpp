@@ -43,7 +43,7 @@
 #else
 #include "../i86.h"
 #endif
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 #include "../i86.h" // V30
 #endif
 #include "../io.h"
@@ -188,6 +188,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	pio_prn = new I8255(this, emu);		// for printer
 	pio_prn->set_device_name(_T("8255 PIO (Printer)"));
 	pic = new I8259(this, emu);
+	pic->num_chips = 2;
 #if defined(HAS_I86)
 	cpu = new I86(this, emu);
 	cpu->device_model = INTEL_8086;
@@ -207,15 +208,28 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	cpu = new I386(this, emu);
 	cpu->device_model = INTEL_I486DX;
 #endif
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 	v30 = new I86(this, emu);
 	v30->device_model = NEC_V30;
 #endif
 	io = new IO(this, emu);
+	io->space = 0x10000;
+	io->bus_width = 16;
 	rtcreg = new LS244(this, emu);
 	rtcreg->set_device_name(_T("74LS244 (RTC)"));
 //	memory = new MEMORY(this, emu);
 	memory = new MEMBUS(this, emu);
+#if defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)
+	memory->space = 0x1000000; // 16MB
+#else
+	memory->space = 0x0100000; // 1MB
+#endif
+#if defined(SUPPORT_32BIT_DATABUS)
+	memory->bus_width = 32;
+#else
+	memory->bus_width = 16;
+#endif
+	memory->bank_size = 0x800;
 	not_busy = new NOT(this, emu);
 	not_busy->set_device_name(_T("NOT Gate (Printer Busy)"));
 #if defined(HAS_I86) || defined(HAS_V30)
@@ -224,12 +238,12 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 #endif
 	rtc = new UPD1990A(this, emu);
 #if defined(SUPPORT_2HD_FDD_IF)
-#if defined(_PC9801) || defined(_PC9801E)
+#if /*defined(_PC9801) ||*/ defined(_PC9801E)
 	if((config.dipswitch & DIPSWITCH_2HD) && FILEIO::IsFileExisting(create_local_path(_T("2HDIF.ROM")))) {
 #endif
 		fdc_2hd = new UPD765A(this, emu);
 		fdc_2hd->set_device_name(_T("uPD765A FDC (2HD I/F)"));
-#if defined(_PC9801) || defined(_PC9801E)
+#if /*defined(_PC9801) ||*/ defined(_PC9801E)
 	} else {
 		fdc_2hd = NULL;
 	}
@@ -294,6 +308,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 		opn->set_device_name(_T("YM2203 OPN (PC-9801-26)"));
 		opn->is_ym2608 = false;
 #endif
+		opn->is_port_a_input = true;
 		fmsound = new FMSOUND(this, emu);
 		joystick = new JOYSTICK(this, emu);
 	} else if(sound_type == 2 || sound_type == 3) {
@@ -375,7 +390,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	
 	// set cpu device contexts
 	event->set_context_cpu(cpu, cpu_clocks);
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 	event->set_context_cpu(v30, v30_clocks);
 #endif
 #if defined(SUPPORT_320KB_FDD_IF)
@@ -399,6 +414,11 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	event->set_context_sound(noise_head_up);
 	
 	// set other device contexts
+#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && defined(HAS_SUB_V30)
+	dma->set_context_cpu(cpureg);
+#else
+	dma->set_context_cpu(cpu);
+#endif
 	dma->set_context_memory(memory);
 	// dma ch.0: sasi
 	// dma ch.1: memory refresh
@@ -478,7 +498,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	rtcreg->set_context_output(rtc, SIG_UPD1990A_DIN, 0x20, 0);
 	rtcreg->set_context_output(rtc, SIG_UPD1990A_STB, 0x08, 0);
 	rtcreg->set_context_output(rtc, SIG_UPD1990A_CLK, 0x10, 0);
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && defined(HAS_SUB_V30)
 	pic->set_context_cpu(cpureg);
 #else
 	pic->set_context_cpu(cpu);
@@ -504,15 +524,15 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	
 #if defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)
 	cpureg->set_context_cpu(cpu);
-#if !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 	cpureg->set_context_v30(v30);
 	cpureg->set_context_pio(pio_prn);
 	cpureg->cpu_mode = (config.cpu_type == 2 || config.cpu_type == 3);
 #endif
 #endif
 	display->set_context_pic(pic);
-	display->set_context_gdc_chr(gdc_chr, gdc_chr->get_ra());
-	display->set_context_gdc_gfx(gdc_gfx, gdc_gfx->get_ra(), gdc_gfx->get_cs());
+	display->set_context_gdc_chr(gdc_chr);
+	display->set_context_gdc_gfx(gdc_gfx);
 	dmareg->set_context_dma(dma);
 	keyboard->set_context_sio(sio_kbd);
 	memory->set_context_display(display);
@@ -609,7 +629,7 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 #ifdef USE_DEBUGGER
 	cpu->set_context_debugger(new DEBUGGER(this, emu));
 #endif
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 	v30->set_context_mem(memory);
 	v30->set_context_io(io);
 	v30->set_context_intr(pic);
@@ -1084,7 +1104,129 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 	for(DEVICE* device = first_device; device; device = device->next_device) {
 		device->initialize();
 	}
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if defined(_PC9801)
+		// 8086-5MHz
+		memory->set_wait_rw(0x000000, 0x0fffff, 0); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 1);
+#elif defined(_PC9801E)
+	if(config.cpu_type == 0) {
+		// 8086-8MHz
+		memory->set_wait_rw(0x000000, 0x0fffff, 1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 2);
+	} else {
+		// 8086-5MHz
+		memory->set_wait_rw(0x000000, 0x0fffff, 0); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 1);
+	}
+#elif defined(_PC9801U) || defined(_PC9801VF)
+		// V30-8MHz
+		memory->set_wait_rw(0x000000, 0x0fffff, 1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 2);
+#elif defined(_PC9801VM) || defined(_PC98DO)
+	if(config.cpu_type == 0) {
+		// V30-10MHz
+		memory->set_wait_rw(0x000000, 0x0fffff, 1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 3);
+	} else {
+		// V30-8MHz
+		memory->set_wait_rw(0x000000, 0x0fffff, 1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 2);
+	}
+#elif defined(_PC9801VX)
+	if(config.cpu_type == 0) {
+		// 80286-10MHz
+		memory->set_wait_rw(0x000000, 0x0bffff, 0); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 5); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff, 0); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff, 0); // ROM (STD)
+		memory->set_wait_rw(0x100000, 0xffffff, 1); // RAM (EXP)
+		io->set_iowait_range_rw(0x0000, 0xffff, 4);
+	} else if(config.cpu_type == 1) {
+		// 80286-8MHz
+		memory->set_wait_rw(0x000000, 0x0bffff, 0); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 4); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff, 0); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff, 0); // ROM (STD)
+		memory->set_wait_rw(0x100000, 0xffffff, 1); // RAM (EXP)
+		io->set_iowait_range_rw(0x0000, 0xffff, 3);
+	} else if(config.cpu_type == 2) {
+		// V30-10MHz
+		memory->set_wait_rw(0x000000, 0x0bffff, 1); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 3); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff, 1); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff, 1); // ROM (STD)
+		io->set_iowait_range_rw(0x0000, 0xffff, 3);
+	} else {
+		// V30-8MHz
+		memory->set_wait_rw(0x000000, 0x0bffff, 1); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 2); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff, 1); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff, 1); // ROM (STD)
+		io->set_iowait_range_rw(0x0000, 0xffff, 2);
+	}
+#elif defined(_PC9801RA)
+	if(config.cpu_type == 0) {
+		// 80386-20MHz
+		memory->set_wait_rw(0x000000, 0x0bffff,  0); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 12); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff,  0); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff,  0); // ROM (STD)
+		memory->set_wait_rw(0x100000, 0xffffff,  0); // RAM (EXP)
+		io->set_iowait_range_rw(0x0000, 0xffff, 10);
+	} else if(config.cpu_type == 1) {
+		// 80386-16MHz
+		memory->set_wait_rw(0x000000, 0x0bffff,  0); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 10); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff,  0); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff,  0); // ROM (STD)
+		memory->set_wait_rw(0x100000, 0xffffff,  1); // RAM (EXP)
+		io->set_iowait_range_rw(0x0000, 0xffff,  8);
+	} else if(config.cpu_type == 2) {
+		// V30-10MHz
+		memory->set_wait_rw(0x000000, 0x0bffff, 1); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 3); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff, 1); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff, 1); // ROM (STD)
+		io->set_iowait_range_rw(0x0000, 0xffff, 3);
+	} else {
+		// V30-8MHz
+		memory->set_wait_rw(0x000000, 0x0bffff, 1); // RAM
+		memory->set_wait_rw(0x0c0000, 0x0dffff, 2); // ROM (0C,0D)
+		memory->set_wait_rw(0x0e0000, 0x0e7fff, 1); // RAM
+		memory->set_wait_rw(0x0e8000, 0x0fffff, 1); // ROM (STD)
+		io->set_iowait_range_rw(0x0000, 0xffff, 2);
+	}
+#elif defined(_PC98XA)
+		// 80286-8MHz
+		memory->set_wait_rw(0x000000, 0xffffff, 1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 3);
+#elif defined(_PC98XL)
+	if(config.cpu_type == 0) {
+		// 80286-10MHz
+		memory->set_wait_rw(0x000000, 0xffffff, 1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 4); // I/O
+	} else if(config.cpu_type == 1) {
+		// 80286-8MHz
+		memory->set_wait_rw(0x000000, 0xffffff, 1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 3); // I/O
+	}
+#elif defined(_PC98XL2)
+		// 80386-16MHz
+		memory->set_wait_rw(0x000000, 0xffffff,  1); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 10); // I/O
+#elif defined(_PC98RL)
+	if(config.cpu_type == 0) {
+		// 80386-20MHz
+		memory->set_wait_rw(0x000000, 0xffffff,  0); // RAM/ROM
+		io->set_iowait_range_rw(0x0000, 0xffff, 10); // I/O
+	} else {
+		// 80386-16MHz
+		memory->set_wait_rw(0x000000, 0x0fffff,  0); // RAM/ROM
+		memory->set_wait_rw(0x100000, 0xffffff,  1); // RAM (EXP)
+		io->set_iowait_range_rw(0x0000, 0xffff,  8); // I/O
+	}
+#endif
+#if defined(HAS_SUB_V30)
 	if(config.cpu_type == 2 || config.cpu_type == 3) {
 		cpu->write_signal(SIG_CPU_BUSREQ,  1, 1);
 	} else {
@@ -1201,10 +1343,7 @@ void VM::reset()
 #if defined(SUPPORT_HIRESO)
 //	port_c |= 0x08; // MODSW, 1 = Normal Mode, 0 = Hireso Mode
 #endif
-#if defined(HAS_V30) || defined(HAS_V33)
-	port_c |= 0x04; // DIP SW 3-8, 1 = V30, 0 = 80x86
-#endif
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 	if(config.cpu_type == 2 || config.cpu_type == 3) {
 		port_c |= 0x04; // DIP SW 3-8, 1 = V30, 0 = 80x86
 	}
@@ -1277,13 +1416,14 @@ void VM::reset()
 	port_b |= 0x08; // DIP SW 1-8, 1 = Standard graphic mode, 0 = Enhanced graphic mode
 #endif
 	port_b |= 0x04; // Printer BUSY#, 1 = Inactive, 0 = Active (BUSY)
-#if defined(HAS_V30) || defined(HAS_V33)
-	port_b |= 0x02; // CPUT, 1 = V30/V33, 0 = 80x86
-#endif
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
+#if !defined(SUPPORT_HIRESO)
+#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && defined(HAS_SUB_V30)
 	if(cpureg->cpu_mode) {
 		port_b |= 0x02; // CPUT, 1 = V30/V33, 0 = 80x86
 	}
+#elif defined(HAS_V30) || defined(HAS_V33)
+	port_b |= 0x02; // CPUT, 1 = V30/V33, 0 = 80x86
+#endif
 #endif
 #if defined(_PC9801VF) || defined(_PC9801U)
 	port_b |= 0x01; // VF, 1 = PC-9801VF/U
@@ -1364,10 +1504,18 @@ DEVICE *VM::get_cpu(int index)
 	}
 #else
 	if(index == 0) {
+#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && defined(HAS_SUB_V30)
+		if(cpureg->cpu_mode) {
+			return NULL;
+		}
+#endif
 		return cpu;
 	} else if(index == 1) {
-#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && !defined(SUPPORT_HIRESO)
-		return v30;
+#if (defined(SUPPORT_24BIT_ADDRESS) || defined(SUPPORT_32BIT_ADDRESS)) && defined(HAS_SUB_V30)
+		if(cpureg->cpu_mode) {
+			return v30;
+		}
+		return NULL;
 #elif defined(SUPPORT_320KB_FDD_IF)
 		return cpu_sub;
 #endif

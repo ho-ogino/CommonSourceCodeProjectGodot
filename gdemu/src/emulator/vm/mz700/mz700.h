@@ -45,9 +45,6 @@
 #define SCREEN_WIDTH		640
 #define SCREEN_HEIGHT		400
 #define WINDOW_HEIGHT_ASPECT	480
-#define IO_ADDR_MAX		0x100
-#define Z80_MEMORY_WAIT
-#define Z80_IO_WAIT
 #define MAX_DRIVE		4
 #define HAS_MB8876
 #if defined(_MZ1500)
@@ -79,11 +76,11 @@
 #define USE_SCREEN_FILTER
 #define USE_SCANLINE
 #if defined(_MZ700)
-#define USE_SOUND_VOLUME	4
-#elif defined(_MZ800)
 #define USE_SOUND_VOLUME	5
-#elif defined(_MZ1500)
+#elif defined(_MZ800)
 #define USE_SOUND_VOLUME	6
+#elif defined(_MZ1500)
+#define USE_SOUND_VOLUME	7
 #endif
 #if defined(_MZ1500)
 #define USE_PRINTER
@@ -173,7 +170,7 @@ static const _TCHAR *sound_device_caption[] = {
 #elif defined(_MZ1500)
 	_T("PSG #1"), _T("PSG #2"),
 #endif
-	_T("Beep"), _T("CMT (Signal)"), _T("Noise (CMT)"), _T("Noise (FDD)"),
+	_T("Beep"), _T("CMT (Signal)"), _T("Noise (CMT)"), _T("Noise (FDD)"), _T("Noise (QD)"),
 };
 #endif
 

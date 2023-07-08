@@ -37,16 +37,7 @@
 #define WINDOW_HEIGHT_ASPECT	480
 #define MAX_DRIVE		4
 #define HAS_MB8876
-#ifdef SUPPORT_QUICK_DISK
-#endif
-#ifdef SUPPORT_16BIT_BOARD
-#define I8259_MAX_CHIPS		1
-#endif
 #define PRINTER_STROBE_RISING_EDGE
-
-// memory wait
-#define Z80_MEMORY_WAIT
-#define Z80_IO_WAIT
 
 // device informations for win32
 #define USE_SPECIAL_RESET
@@ -65,7 +56,11 @@
 #define USE_SCREEN_FILTER
 #endif
 #define USE_SCANLINE
+#ifdef SUPPORT_QUICK_DISK
+#define USE_SOUND_VOLUME	5
+#else
 #define USE_SOUND_VOLUME	4
+#endif
 #define USE_PRINTER
 #define USE_PRINTER_TYPE	4
 #define USE_DEBUGGER
@@ -78,6 +73,9 @@
 #ifdef USE_SOUND_VOLUME
 static const _TCHAR *sound_device_caption[] = {
 	_T("Beep"), _T("CMT (Signal)"), _T("Noise (FDD)"), _T("Noise (CMT)"),
+#ifdef SUPPORT_QUICK_DISK
+	_T("Noise (QD)"),
+#endif
 };
 #endif
 

@@ -8,6 +8,7 @@
 	[ memory bus ]
 */
 
+#include "../z80.h"
 #include "membus.h"
 
 void MEMBUS::initialize()
@@ -41,32 +42,34 @@ uint32_t MEMBUS::fetch_op(uint32_t addr, int *wait)
 		if(page != page_after_jump) {
 			page = page_after_jump;
 			update_bank();
+			d_cpu->set_intr_enb(true);
 		}
 		after_jump = false;
 	} else if(val == 0xc3) {
 		after_jump = true;
 	}
-	*wait = 0;
 	return val;
 }
 
-uint32_t MEMBUS::read_data8(uint32_t addr)
+uint32_t MEMBUS::read_data8w(uint32_t addr, int *wait)
 {
 	if(page_exchange) {
 		page_exchange = false;
+		d_cpu->set_intr_enb(true);
 		return ram[(page ? 0 : 0x10000) | (addr & 0xffff)];
 	}
-	return MEMORY::read_data8(addr);
+	return MEMORY::read_data8w(addr, wait);
 }
 
-void MEMBUS::write_data8(uint32_t addr, uint32_t data)
+void MEMBUS::write_data8w(uint32_t addr, uint32_t data, int *wait)
 {
 	if(page_exchange) {
 		page_exchange = false;
+		d_cpu->set_intr_enb(true);
 		ram[(page ? 0 : 0x10000) | (addr & 0xffff)] = data;
 		return;
 	}
-	MEMORY::write_data8(addr, data);
+	MEMORY::write_data8w(addr, data, wait);
 }
 
 uint32_t MEMBUS::read_dma_data8w(uint32_t addr, int* wait)
@@ -107,13 +110,20 @@ void MEMBUS::write_io8(uint32_t addr, uint32_t data)
 		}
 		break;
 	case 0xd0:
-		page_after_jump = false;
+		if(page_after_jump) {
+			page_after_jump = false;
+			d_cpu->set_intr_enb(false);
+		}
 		break;
 	case 0xd1:
-		page_after_jump = true;
+		if(!page_after_jump) {
+			page_after_jump = true;
+			d_cpu->set_intr_enb(false);
+		}
 		break;
 	case 0xd2:
 		page_exchange = true;
+		d_cpu->set_intr_enb(false);
 		break;
 	}
 }

@@ -30,14 +30,11 @@
 #define SCREEN_WIDTH		640
 #define SCREEN_HEIGHT		400
 #define MAX_DRIVE		1
-#define I86_PSEUDO_BIOS
-#define I8259_MAX_CHIPS		1
-//#define UPD765A_DMA_MODE
-//#define SINGLE_MODE_DMA
-#define IO_ADDR_MAX		0x10000
+//#define I86_PSEUDO_BIOS
+#define SINGLE_MODE_DMA
 #define IOBUS_RETURN_ADDR
 #ifdef _PC98HA
-//#define DOCKING_STATION
+#define DOCKING_STATION
 #endif
 
 // device informations for win32
@@ -47,8 +44,12 @@
 #define USE_AUTO_KEY_RELEASE	6
 #define USE_AUTO_KEY_NUMPAD
 #define USE_SOUND_VOLUME	2
+#define USE_MIDI
 #define USE_PRINTER
 #define USE_PRINTER_TYPE	3
+#define USE_SERIAL
+#define USE_SERIAL_TYPE		4
+#define SERIAL_TYPE_DEFAULT	(USE_SERIAL_TYPE - 1)
 #define USE_DEBUGGER
 #define USE_STATE
 
@@ -82,12 +83,13 @@ class UPD1990A;
 class UPD71071;
 class UPD765A;
 
-class BIOS;
+//class BIOS;
 class CALENDAR;
 class FLOPPY;
 class KEYBOARD;
-class MEMORY;
+class MEMBUS;
 class NOTE;
+class SERIAL;
 
 class VM : public VM_TEMPLATE
 {
@@ -116,12 +118,13 @@ protected:
 	UPD71071* dma;
 	UPD765A* fdc;
 	
-	BIOS* bios;
+//	BIOS* bios;
 	CALENDAR* calendar;
 	FLOPPY* floppy;
 	KEYBOARD* keyboard;
-	MEMORY* memory;
+	MEMBUS* memory;
 	NOTE* note;
+	SERIAL* serial;
 	
 public:
 	// ----------------------------------------

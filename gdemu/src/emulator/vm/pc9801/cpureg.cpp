@@ -19,7 +19,7 @@
 //#include "../i286_np21.h"
 #include "../i286.h"
 #endif
-#if !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 #include "../i86.h"
 #include "../i8255.h"
 #endif
@@ -42,27 +42,26 @@ void CPUREG::write_io8(uint32_t addr, uint32_t data)
 	case 0x00f0:
 		d_cpu->reset();
 		d_cpu->set_address_mask(0x000fffff);
-#if !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 		d_cpu->write_signal(SIG_CPU_BUSREQ,  data, 1);
 		d_v30->reset();
 		d_v30->write_signal(SIG_CPU_BUSREQ, ~data, 1);
 		cpu_mode = ((data & 1) != 0);
-		d_pio->write_signal(SIG_I8255_PORT_B, data, 2);
+		d_pio->write_signal(SIG_I8255_PORT_B, data << 1, 2);
 #endif
 		break;
 	case 0x00f2:
-//#if defined(SUPPORT_32BIT_ADDRESS)
-//		d_cpu->set_address_mask(0xffffffff);
-//#else
+#if defined(SUPPORT_32BIT_ADDRESS)
+		d_cpu->set_address_mask(0xffffffff);
+#else
 		d_cpu->set_address_mask(0x00ffffff);
-//#endif
+#endif
 		break;
 #if defined(SUPPORT_32BIT_ADDRESS)
 	case 0x00f6:
 		switch(data) {
 		case 0x02:
-//			d_cpu->set_address_mask(0xffffffff);
-			d_cpu->set_address_mask(0x00ffffff);
+			d_cpu->set_address_mask(0xffffffff);
 			break;
 		case 0x03:
 			d_cpu->set_address_mask(0x000fffff);
@@ -95,10 +94,7 @@ uint32_t CPUREG::read_io8(uint32_t addr)
 //		value |= 0x10; // Unknown
 		value |= 0x08; // RAM access, 1 = Internal-standard/External-enhanced RAM, 0 = Internal-enhanced RAM
 //		value |= 0x04; // Refresh mode, 1 = Standard, 0 = High speed
-#if defined(HAS_I86) || defined(HAS_V30)
-		value |= 0x02; // CPU mode, 1 = V30, 0 = 80286/80386
-#endif
-#if !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 		if(cpu_mode) {
 			value |= 0x02; // CPU mode, 1 = V30, 0 = 80286/80386
 		}
@@ -122,13 +118,22 @@ uint32_t CPUREG::read_io8(uint32_t addr)
 	return 0xff;
 }
 
-#if !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 void CPUREG::set_intr_line(bool line, bool pending, uint32_t bit)
 {
 	if(cpu_mode) {
 		d_v30->set_intr_line(line, pending, bit);
 	} else {
 		d_cpu->set_intr_line(line, pending, bit);
+	}
+}
+
+void CPUREG::set_extra_clock(int clock)
+{
+	if(cpu_mode) {
+		d_v30->set_extra_clock(clock);
+	} else {
+		d_cpu->set_extra_clock(clock);
 	}
 }
 #endif
@@ -143,7 +148,7 @@ bool CPUREG::process_state(FILEIO* state_fio, bool loading)
 	if(!state_fio->StateCheckInt32(this_device_id)) {
 		return false;
 	}
-#if !defined(SUPPORT_HIRESO)
+#if defined(HAS_SUB_V30)
 	state_fio->StateValue(cpu_mode);
 #endif
 	state_fio->StateValue(nmi_enabled);
