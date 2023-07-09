@@ -1,0 +1,12 @@
+[configuration]
+
+entry_symbol = "gdemu_library_init"
+compatibility_minimum = 4.1
+
+[libraries]
+macos.debug="res://bin/libgdemu.macos.template_debug.framework"
+macos.release="res://bin/libgdemu.macos.template_release.framework"
+windows.debug.x86_64 = "res://bin/libgdemu.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://bin/libgdemu.windows.template_release.x86_64.dll"
+linux.debug.x86_64 = "res://bin/libgdemu.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://bin/libgdemu.linux.template_release.x86_64.so"
