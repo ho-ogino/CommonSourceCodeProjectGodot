@@ -53,7 +53,9 @@ void GDEmu::set_app_path(String path)
     //char* cstr = path.ptr.alloc_c_string();
     //set_application_path(cstr);
     //api->godot_free(cstr);
-    const char* cstr = path.ascii().get_data();
+
+    CharString cstrStr = path.ascii();
+    const char* cstr = cstrStr.get_data();
     set_application_path(cstr);
 }
 
@@ -108,7 +110,8 @@ void GDEmu::init() {
 
     // 事前にアプリケーション用パスを保存(書き換え可能なユーザーディレクトリにしておく)
     String app_path = OS::get_singleton()->get_user_data_dir() + "/";
-    const char* pAppPath = app_path.ascii().get_data(); // TODO alloc_c_string();
+    CharString appPathStr = app_path.ascii();
+    const char* pAppPath = appPathStr.get_data(); // TODO alloc_c_string();
     printf("appPath: %s\n", pAppPath);
     set_application_path(pAppPath);
     //api->godot_free(pAppPath);

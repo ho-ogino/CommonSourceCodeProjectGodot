@@ -120,15 +120,17 @@ void decrypt_disk(const _TCHAR *path)
 
     // まずは先に暗号化を解く
     // Ref<AESContext> aes = AESContext::_new();
-    String aesKey = OS::get_singleton()->get_user_data_dir() + "auNlxwzAlC6D0b6q";
+    String aesKey = OS::get_singleton()->get_user_data_dir() + String("auNlxwzAlC6D0b6q");
     String aesKeySha = aesKey.sha256_text();
-    const char* pAes = aesKeySha.ascii().get_data(); // .alloc_c_string();
+    CharString aesKeyShaStr = aesKeySha.ascii();
+    const char* pAes = aesKeyShaStr.get_data(); // .alloc_c_string();
     PackedByteArray keyp;
     for(int i = 0; i < 32; i++)
     {
         keyp.append(pAes[i]);
     }
-    Ref<AESContext> aes = memnew(AESContext);
+    Ref<AESContext> aes; // = memnew(AESContext);
+    aes.instantiate();
     aes->start(AESContext::Mode::MODE_CBC_DECRYPT, keyp, iv);
     PackedByteArray decrypted = aes->update(enc_dat);
     aes->finish();
@@ -139,13 +141,13 @@ void decrypt_disk(const _TCHAR *path)
     // 解凍したものを書いてみる(読み終わったら消す事)
     Ref<FileAccess> dec_file = FileAccess::open(dec_path, FileAccess::ModeFlags::WRITE);
     dec_file->store_buffer(dec_data);
+    dec_file->flush();
     dec_file->close();
 }
 
 void encrypt_disk(const _TCHAR *path)
 {
     _TCHAR dest_path[_MAX_PATH];
-
     FILEIO* fio = new FILEIO();
     fio->Fopen(path, FILEIO_READ_BINARY);
     fio->Fseek(0, FILEIO_SEEK_END);
@@ -153,6 +155,7 @@ void encrypt_disk(const _TCHAR *path)
     fio->Fseek(0 , SEEK_SET);
     fio->Fread(file_buffer, total_size, 1);
     fio->Fclose();
+    delete fio;
 
     PackedByteArray orig_data;
     for(uint32_t i = 0; i < total_size; i++)
@@ -160,12 +163,14 @@ void encrypt_disk(const _TCHAR *path)
         orig_data.append(file_buffer[i]);
     }
 
-    Ref<AESContext> aes = memnew(AESContext);
+    Ref<AESContext> aes; // = memnew(AESContext);
+    aes.instantiate();
 
     // キーはユーザー名を含むディレクトリ+αとする(テキトー)
     String aesKey = OS::get_singleton()->get_user_data_dir() + "auNlxwzAlC6D0b6q";
     String aesKeySha = aesKey.sha256_text();
-    const uint8_t* pAes = aesKeySha.to_ascii_buffer().ptr(); //.alloc_c_string();
+    CharString aesKeyShaStr = aesKeySha.ascii();
+    const char* pAes = aesKeyShaStr.get_data(); // .alloc_c_string();
     PackedByteArray keyp;
     for(int i = 0; i < 32; i++)
     {
@@ -188,11 +193,13 @@ void encrypt_disk(const _TCHAR *path)
     strcpy(dest_path, path);
     strcat(dest_path, ENCRYPT_FILE_EXT);
 
+    fio = new FILEIO();
     fio->Fopen(dest_path, FILEIO_WRITE_BINARY);
     fio->FputInt32(orig_data.size());
     fio->Fwrite(iv.ptr(), iv.size(), 1);
     fio->Fwrite(encrypted.ptr(), encrypted.size(), 1);
     fio->Fclose();
+    delete fio;
 
     // オリジナルファイルを消す
     FILEIO::RemoveFile(path);
@@ -216,6 +223,7 @@ String resdisk_to_userdir(String path, bool isEncrypt)
       // file->open(encrypt_out_path, File::ModeFlags::READ);
       Ref<FileAccess> file = FileAccess::open(encrypt_out_path, FileAccess::ModeFlags::READ);
       abs_path = file->get_path_absolute();
+      file->flush();
       file->close();
       return abs_path.substr(0, abs_path.length() - 4);   // .binを消す
     } else if(!isEncrypt && FileAccess::file_exists(out_path))
@@ -230,7 +238,7 @@ String resdisk_to_userdir(String path, bool isEncrypt)
     }
 
     Ref<FileAccess> res_file = FileAccess::open(path, FileAccess::ModeFlags::READ);
-    if(error != Error::OK)
+    if(res_file->get_error() != Error::OK)
     {
         return "";
     }
@@ -242,19 +250,21 @@ String resdisk_to_userdir(String path, bool isEncrypt)
     // error = out_file->open(out_path, File::ModeFlags::WRITE);
     Ref<FileAccess> out_file = FileAccess::open(out_path, FileAccess::ModeFlags::WRITE);
     String orig_out_path = out_file->get_path_absolute();
-    if(error != Error::OK)
+    if(out_file->get_error() != Error::OK)
     {
         return "";
     }
     out_file->store_buffer(data);
     abs_path = out_file->get_path_absolute();
+    out_file->flush();
     out_file->close();
 
     if(isEncrypt)
     {
       // コピーしたものを暗号化
       // char* abs_cpath = abs_path.alloc_c_string();
-      const char* abs_cpath = abs_path.ascii().get_data(); // .alloc_c_string();
+      CharString cpathStr = abs_path.ascii();
+      const char* abs_cpath = (const char*)cpathStr.get_data(); // .alloc_c_string();
       encrypt_disk(abs_cpath);
       // api->godot_free(abs_cpath);
 
@@ -273,7 +283,8 @@ void GDEmu::open_floppy_disk(int drv, String file_path, int bank)
     String abs_path = resdisk_to_userdir(file_path, DISK::is_encrypt);
 
     // char* cpath  = abs_path.alloc_c_string();
-    const char* cpath = abs_path.ascii().get_data(); // .alloc_c_string();
+    CharString cpathStr = abs_path.ascii();
+    const char* cpath = cpathStr.get_data(); // .alloc_c_string();
 
     printf("open floppy: %d %s (%d)\n", drv, cpath, bank);
 
@@ -313,7 +324,8 @@ void GDEmu::open_hard_disk(int drv, String file_path)
     String abs_path = resdisk_to_userdir(file_path, false);
 
     //char* cpath  = abs_path.alloc_c_string();
-    const char* cpath = abs_path.ascii().get_data(); // .alloc_c_string();
+    CharString cpathStr = abs_path.ascii();
+    const char* cpath = cpathStr.get_data(); // .alloc_c_string();
 
     printf("open harddisk: %d %s\n", drv, cpath);
 
@@ -330,7 +342,8 @@ void GDEmu::open_cart(int drv, String str)
 #ifdef USE_CART
     String abs_path = resdisk_to_userdir(str, false);
     // char* cpath  = abs_path.alloc_c_string();
-    const char* cpath = abs_path.ascii().get_data(); // .alloc_c_string();
+    CharString cpathStr = abs_path.ascii();
+    const char* cpath = cpathStr.get_data(); // .alloc_c_string();
     printf("open cart: %d %s\n", drv, cpath);
 
     emu->open_cart(drv, cpath);
