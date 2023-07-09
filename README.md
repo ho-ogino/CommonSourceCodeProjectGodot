@@ -16,7 +16,7 @@ CommonSourceCodeProjectGodotは、TAKEDA, toshiyaさんのCommon Source Code Pro
 
 ## ビルド方法
 
-まずはGDNativeのビルドを行います。
+まずはGDExtensionのビルドを行います。
 
 リポジトリ取得後にサブモジュールを更新
 ```
