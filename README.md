@@ -1,6 +1,6 @@
 # CommonSourceCodeProjectGodot
 
-v0.3.0 (2022/10/26)
+v0.4.1 (2023/07/09)
 
 ## Introduction
 
@@ -12,7 +12,7 @@ CommonSourceCodeProjectGodotは、TAKEDA, toshiyaさんのCommon Source Code Pro
 
 汎用的なエミュレータとしての利用を想定しておらず、独自開発の旧パソコン用ゲーム(のディスクイメージ等)をこのエミュレーターに組み込んだ上で、Godot Engineにてビルドし、単独アプリ化した上で、Steamやitch.io、自サイトなどにて配布/販売出来れば……という意図で開発しておりますが、諸々権利的な問題があるため、現状では実験的な実装となっています。
 
-※組み込まれているCommonSourceCodeProjectは (9/11/2022)版 です。
+※組み込まれているCommonSourceCodeProjectは (6/11/2023)版 です。
 
 ## ビルド方法
 
@@ -25,15 +25,20 @@ submodule update --init
 cd ..
 ```
 
-Windowsの場合(Visual StudioのDeveloper Commnand Promptにて動作確認済)
+ビルド実行(Windows / macOS / Linux共通)
 ```
-scons platform=windows
+cd gdemu
+```
+で、ディレクトリを移動した後、
+```
+scons target=template_debug
+```
+または
+```
+scons target=template_release
 ```
 
-macOSの場合
-```
-scons platform=osx macos_arch=universal
-```
+※Windowsの場合(Visual StudioのDeveloper Commnand Promptにて動作確認済)
 
 エミュレータを切り替える場合は、sconsのコマンドライン引数に「emu=(エミュレーター名称)」を付与してください。
 
@@ -46,8 +51,6 @@ scons platform=osx macos_arch=universal
 
 省略時はX1のビルドになります。
 
-Linuxでは動作確認を出来ていません。
-
 ビルドが終了すると下記の表示が出ますので、Godot Engineを起動して、プロジェクトを読み込んでください。
 ```
 scons: done building targets.
@@ -56,7 +59,7 @@ scons: done building targets.
 ## 起動
 
 Godot Engineのプロジェクトファイルはリポジトリのフォルダ「godotemu」の中にあるので、そちらを起動してください。
-Godot Engineのバージョンは v3.5 stable 推奨です。
+Godot Engineのバージョンは v4.1 stable に対応しています。
 
 また、本リポジトリには起動に必要なファイルがいくつか含まれていませんので、適切に、プロジェクトフォルダ(godotemu内)にそれぞれコピーしておいてください。
 
@@ -122,13 +125,15 @@ Godot Engineのバージョンは v3.5 stable 推奨です。
 * 全体的に実装が雑です
 * ディスクイメージは読み書きが必要な関係上、ユーザーフォルダにコピーしてから使われます
 * ユーザーフォルダはGodotのユーザーデータのフォルダになります(参考⇒ https://docs.godotengine.org/ja/stable/tutorials/io/data_paths.html )
-* ディスクイメージは暗号化して保存されます(独自ゲームのカジュアルコピー防止用。ただし実行ファイルのコピー防止機能などは無いため、その部分が必要な場合は独自で検討、実装してください)
+* メインシーンのプロパティ「is_disk_encrypt」にチェックを入れる(trueにする)と、ディスクイメージは暗号化して保存されます(独自ゲームのカジュアルコピー防止用。ただし実行ファイルのコピー防止機能などは無いため、その部分が必要な場合は独自で検討、実装してください)
 * MSXの(ゲーム)ROMイメージは現状暗号化されません
 * 速度調整や音まわりの調整が雑です
 * MSXのMapper設定が出来ません(自動判別のみ)
 * PC-8801MAについてはほぼ未検証です(起動確認程度)
 
 ## History
+* v0.4.1 (2023/07/09)
+  * Godot Engine 4.1に対応(GDExtensionに対応)
 * v0.3.0 (2022/10/26)
   * X1turboに対応
   * PC-8801MAに対応
