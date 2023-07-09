@@ -403,7 +403,7 @@ public:
 #if defined(OSD_QT)
 	pthread_t debugger_thread_id;
 	CSP_Debugger *hDebugger;
-#elif defined(OSD_WIN32)
+#elif defined(OSD_WIN32) || defined(_MSC_VER)
 	HANDLE hDebuggerThread;
 #else
 	int debugger_thread_id;

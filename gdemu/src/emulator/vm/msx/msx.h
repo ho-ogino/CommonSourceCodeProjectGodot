@@ -67,7 +67,7 @@
 #define USE_SOUND_VOLUME	4
 #endif
 #define USE_JOYSTICK
-#define USE_DEBUGGER
+//#define USE_DEBUGGER
 #define USE_STATE
 
 #include "../../common.h"
