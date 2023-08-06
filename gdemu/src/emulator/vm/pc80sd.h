@@ -14,6 +14,10 @@
 #include "../emu.h"
 #include "device.h"
 
+#if !(defined(_WIN32) || defined(_WIN64))
+#include <pthread.h>
+#endif
+
 
 class SignalNode {
 public:
@@ -69,6 +73,16 @@ public:
         return front;
     }
 
+    void Clear()
+    {
+	while (front != nullptr) {
+	    SignalNode* temp = front;
+	    front = front->next;
+	    delete temp;
+	}
+	rear = nullptr;
+    }
+
     bool IsEmpty() {
         return front == nullptr;
     }
@@ -78,8 +92,23 @@ class PC80SD : public DEVICE
 {
 private:
 	void proc_signal();
+
+	int state;
+	int sub_state;
+	int result_value;
+	int send_value;
+	int sd_command;
+	uint8_t receive_datas[256];
+	uint8_t send_datas[65536];
+	int send_datas_count;
+	int send_datas_index;
+	int receive_datas_count;
+	int receive_datas_index;
+	int wait_count;
+	Stack stateStack;
 public:
 	SignalQueue signalQueue;
+	int register_id;
 
 	struct {
 		uint8_t reg;

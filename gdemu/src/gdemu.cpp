@@ -83,7 +83,6 @@ static void file_copy(String from, String to)
 
 static void folder_copy(String folder_name)
 {
-
     Ref<DirAccess> dir = DirAccess::open("user://");
     if(!dir->dir_exists(folder_name))
     {
@@ -91,24 +90,27 @@ static void folder_copy(String folder_name)
     }
     // fromフォルダ内の全てのファイルをtoフォルダにコピーする
     dir = DirAccess::open("res://" + folder_name);
-    dir->list_dir_begin();
-    String file = dir->get_next();
-    while(file != "")
+    if(dir->get_open_error() == Error::OK)
     {
-        String from_file = "res://" + folder_name + "/" + file;
-        String to_file = "user://" + folder_name + "/" + file;
-        if(dir->current_is_dir())
+        dir->list_dir_begin();
+        String file = dir->get_next();
+        while(file != "")
         {
-            // フォルダは無視
+            String from_file = "res://" + folder_name + "/" + file;
+            String to_file = "user://" + folder_name + "/" + file;
+            if(dir->current_is_dir())
+            {
+                // フォルダは無視
+                file = dir->get_next();
+                continue;
+            }
+            else
+            {
+                // ファイルならコピー
+                dir->copy(from_file, to_file);
+            }
             file = dir->get_next();
-            continue;
         }
-        else
-        {
-            // ファイルならコピー
-            dir->copy(from_file, to_file);
-        }
-        file = dir->get_next();
     }
 }
 
@@ -181,6 +183,9 @@ void GDEmu::init() {
     file_copy("res://N80_2.ROM", "user://N80_2.ROM");
     file_copy("res://N80_3.ROM", "user://N80_3.ROM");
     file_copy("res://KANJI1.ROM", "user://KANJI1.ROM");
+#endif
+
+#ifdef SUPPORT_PC80_SDCARD
     file_copy("res://EXT_ROM_SHIFT_OFF.bin", "user://EXT_ROM_SHIFT_OFF.bin");
     file_copy("res://EXT_ROM_SHIFT_ON.bin", "user://EXT_ROM_SHIFT_ON.bin");
     file_copy("res://EXT_ROM_A_OFF.bin", "user://EXT_ROM_A_OFF.bin");

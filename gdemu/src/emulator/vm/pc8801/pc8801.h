@@ -179,7 +179,7 @@
 #define USE_COMPACT_DISC	1
 #endif
 #define USE_KEY_LOCKED
-// slow enough for N88-“ú–{ŒêBASIC
+// slow enough for N88-ï¿½ï¿½ï¿½{ï¿½ï¿½BASIC
 #define USE_AUTO_KEY		8
 #define USE_AUTO_KEY_RELEASE	10
 #define USE_AUTO_KEY_NUMPAD
@@ -245,7 +245,7 @@
 #else
 #define USE_PRINTER_TYPE	3
 #endif
-#define USE_DEBUGGER
+//#define USE_DEBUGGER
 #define USE_STATE
 
 #include "../../common.h"

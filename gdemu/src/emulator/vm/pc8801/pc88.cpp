@@ -264,7 +264,14 @@ static const int key_conv_table[][3] = {
 };
 
 static const uint8_t intr_mask2_table[8] = {
-	~7, ~3, ~5, ~1, ~6, ~2, ~4, ~0
+	(uint8_t)~7,
+	(uint8_t)~3,
+	(uint8_t)~5,
+	(uint8_t)~1,
+	(uint8_t)~6,
+	(uint8_t)~2,
+	(uint8_t)~4,
+	(uint8_t)~0
 };
 
 void PC88::initialize()

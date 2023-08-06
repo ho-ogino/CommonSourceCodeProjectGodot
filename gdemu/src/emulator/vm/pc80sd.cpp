@@ -9,6 +9,11 @@
 #include "pc80sd.h"
 #include "../fileio.h"
 
+#if !(defined(_WIN32) || defined(_WIN64))
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
+
 #define EVENT_TIMER 1
 
 #define SIG_I8255_PORT_A 0
@@ -16,6 +21,13 @@
 #define SIG_I8255_PORT_C 2
 
 PC80SD *current_pc80sd;
+
+enum {
+	NOCHECK = 0,	
+	CHECK_LOW,
+	CHECK_HIGH,
+};
+int current_check = NOCHECK;
 
 #if defined(_WIN32) || defined(_WIN64)
 CRITICAL_SECTION signal_cs;
@@ -83,7 +95,7 @@ private:
 	HANDLE hFind = INVALID_HANDLE_VALUE;
 #else
 	DIR *dir;
-	struct dirent *dp;
+	struct dirent *ent;
 #endif
 	SDFileEntry currentEntry;
 
@@ -91,6 +103,10 @@ public:
 	SDFile()
 	{
 		memset(base_path, 0, sizeof(base_path));
+	}
+	~SDFile()
+	{
+		close();
 	}
 	bool open(const char *path);
 	SDFileEntry openNextFile();
@@ -183,12 +199,14 @@ SDFileEntry SDFile::openNextFile()
 
 #else
 	bool updated = false;
-	while((ent = readdir(dir)) != NULL)
+	char full_path[PATH_MAX];
+	if(dir != nullptr)
 	{
 		struct stat st;
 		while ((ent = readdir(dir)) != NULL)
 		{
-			stat(ent->d_name, &st);
+			snprintf(full_path, sizeof(full_path), "%s/%s", base_path, ent->d_name);
+			stat(full_path, &st);
 			if (S_ISDIR(st.st_mode)) {
 				continue;
 			} else if(S_ISREG(st.st_mode)) {
@@ -205,7 +223,11 @@ SDFileEntry SDFile::openNextFile()
 	{
 		SDFileEntry invalidEntry;
 		currentEntry = invalidEntry;
-		closedir(dir);
+		if(dir != nullptr)
+		{
+			closedir(dir);
+			dir = nullptr;
+		}
 	}
 #endif
 	return result;
@@ -242,12 +264,14 @@ bool SDFile::open(const char *path)
 		break;
 	} while (FindNextFile(hFind, &ffd) != 0);
 #else
+	char full_path[PATH_MAX];
 	if ((dir = opendir(path)) != NULL)
 	{
 		struct stat st;
 		while ((ent = readdir(dir)) != NULL)
 		{
-			stat(ent->d_name, &st);
+			snprintf(full_path, sizeof(full_path), "%s/%s", path, ent->d_name);
+			stat(full_path, &st);
 			if (S_ISDIR(st.st_mode)) {
 				continue;
 			} else if(S_ISREG(st.st_mode)) {
@@ -266,6 +290,11 @@ void SDFile::close()
 #if defined(_WIN32) || defined(_WIN64)
 	FindClose(hFind);
 #else
+	if(dir != nullptr)
+	{
+		closedir(dir);
+		dir = nullptr;
+	}
 #endif
 }
 
@@ -306,7 +335,7 @@ void thread_join(volatile PC80SD *p)
 	WaitForSingleObject((HANDLE)p->threadHandle, INFINITE);
 	CloseHandle((HANDLE)p->threadHandle);
 #else
-	pthread_join(threadID, NULL);
+	pthread_join(p->threadID, NULL);
 #endif
 }
 
@@ -322,11 +351,17 @@ void thread_yield()
 
 void thread_sleep(int timer_count)
 {
+	// pthread_mutex_lock(&mtx);
 	current_pc80sd->write_signals_thread(-1, timer_count);
-	while(current_pc80sd->sleep_counter > 0)
+	// printf("thread_sleep: start %d\n", timer_count);
+	// pthread_mutex_unlock(&mtx);
+	while(current_pc80sd->sleep_counter > 0 && !current_pc80sd->request_terminate)
 	{
+		// printf("thread_sleep: rest %d\n", current_pc80sd->sleep_counter);
 		thread_yield();
+		// printf("thread_sleep: rest2 %d\n", current_pc80sd->sleep_counter);
 	}
+	// printf("thread_sleep: rest end %d\n", current_pc80sd->sleep_counter);
 
 //#if defined(_WIN32) || defined(_WIN64)
 //	// Windowsの場合
@@ -339,9 +374,22 @@ void thread_sleep(int timer_count)
 
 uint8_t rcv4bit()
 {
-	// HIGHになるまでループ
-	while ((current_pc80sd->port[2].reg & 0x4) == 0 && !current_pc80sd->request_terminate)
+	printf("rcv4bit\n");
+	if(current_pc80sd->request_terminate)
 	{
+			return 0;
+	}
+
+	printf("rcv4bit: high wait\n");
+	// HIGHになるまでループ
+	if(!(current_pc80sd->port[2].reg & 0x4))
+	{
+		current_check = CHECK_HIGH;
+	}
+	// while ((current_pc80sd->port[2].reg & 0x4) == 0 && !current_pc80sd->request_terminate)
+	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
+	{
+		// printf("rcv4bit: high wait\n");
 		thread_yield();
 	}
 	if (current_pc80sd->request_terminate)
@@ -352,12 +400,17 @@ uint8_t rcv4bit()
 	// 受信
 	uint8_t j_data = current_pc80sd->port[0].reg & 0xf;
 
+	printf("rcv4bit: low wait\n");
+	// LOWになるまでループ
+	if((current_pc80sd->port[2].reg & 0x4))
+	{
+		current_check = CHECK_LOW;
+	}
 	// FLGをセット
 	current_pc80sd->write_signals_thread(2, 0x80);
-
-	// LOWになるまでループ
-	while ((current_pc80sd->port[2].reg & 0x4) != 0 && !current_pc80sd->request_terminate)
+	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
 	{
+		// printf("rcv4bit: low wait\n");
 		thread_yield();
 	}
 	if (current_pc80sd->request_terminate)
@@ -368,49 +421,82 @@ uint8_t rcv4bit()
 	// FLGをリセット
 	current_pc80sd->write_signals_thread(2, 0x00);
 
-	// 直後にrcv1byteした場合↑のLOWのチェックがZ80側でされない事があるので
-	thread_sleep(100);
+	
+	// 時間計測のために現在の時間を保存
+	struct timespec start_time, end_time;
+	clock_gettime(CLOCK_MONOTONIC, &start_time);
 
+	// 直後にrcv1byteした場合↑のLOWのチェックがZ80側でされない事があるのでそれなりに待ってやる
+	printf("receive end wait start\n");
+	thread_sleep(16000);
+	printf("receive end wait end\n");
+
+	clock_gettime(CLOCK_MONOTONIC, &end_time);
+	double elapsed = (end_time.tv_sec - start_time.tv_sec) + (end_time.tv_nsec - start_time.tv_nsec) * 1e-9;
+	
+	printf("Elapsed time: %.9f seconds\n", elapsed);
+
+	//printf("rcv4bit end\n");
 	return (j_data);
 }
 
 // 1BYTE送信
-void snd1byte(byte i_data)
+void snd1byte(uint8_t i_data)
 {
+	//printf("snd1byte\n");
 	if (current_pc80sd->request_terminate)
 	{
 		return;
 	}
 	// 下位ビットから8ビット分をセット
 	current_pc80sd->write_signals_thread(1, i_data);
+
+	// HIGHになるまでループ
+	if(!(current_pc80sd->port[2].reg & 0x4))
+	{
+		current_check = CHECK_HIGH;
+	}
 	// FLGPINをHIGHに
 	current_pc80sd->write_signals_thread(2, 0x80);
 
-	// HIGHになるまでループ
-	while ((current_pc80sd->port[2].reg & 0x4) == 0 && !current_pc80sd->request_terminate)
+	//printf("snd1byte high loop\n");
+	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
 	{
+		// printf("snd1byte: high wait\n");
 		thread_yield();
 	}
 	if (current_pc80sd->request_terminate)
 	{
 		return;
 	}
-
-	current_pc80sd->write_signals_thread(2, 0x00);
 
 	// LOWになるまでループ
-	while ((current_pc80sd->port[2].reg & 0x4) != 0 && !current_pc80sd->request_terminate)
+	if((current_pc80sd->port[2].reg & 0x4))
 	{
+		current_check = CHECK_LOW;
+	}
+	current_pc80sd->write_signals_thread(2, 0x00);
+
+	printf("snd1byte low loop\n");
+	//while ((current_pc80sd->port[2].reg & 0x4) != 0 && !current_pc80sd->request_terminate)
+	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
+	{
+		// printf("snd1byte: low wait\n");
 		thread_yield();
 	}
 	if (current_pc80sd->request_terminate)
 	{
 		return;
 	}
+	printf("snd1byte end\n");
 }
 
 uint8_t rcv1byte()
 {
+	if(current_pc80sd->request_terminate)
+	{
+		return 0;
+	}
 	uint8_t i_data = 0;
 	i_data = rcv4bit() * 16;
 	i_data = i_data + rcv4bit();
@@ -420,18 +506,22 @@ uint8_t rcv1byte()
 // SD-CARDのFILELIST
 void dirlist()
 {
+	printf("dirlist\n");
 	// 比較文字列取得 32+1文字まで
 	for (unsigned int lp1 = 0; lp1 <= 32; lp1++)
 	{
 		c_name[lp1] = rcv1byte();
 	}
+	printf("dirlist 2\n");
 
 	SDFile file;
 	bool result = file.open(create_local_path(sd_folder_name));
 	if (result)
 	{
 		// 状態コード送信(OK)
+		printf("send ok\n");
 		snd1byte(0x00);
+		printf("send ok 2\n");
 
 		SDFileEntry entry = file.openNextFile();
 		int cntl2 = 0;
@@ -566,7 +656,7 @@ void receive_name(char *f_name)
 // MONITOR Lコマンド .CMT LOAD
 void cmt_load()
 {
-	boolean flg = false;
+	bool flg = false;
 	// DOSファイル名取得
 	receive_name(m_name);
 	// ファイル名の指定があるか
@@ -724,7 +814,7 @@ void cmt_5f9e(void)
 
 void w_body(void)
 {
-	byte r_data, csum;
+	uint8_t r_data, csum;
 	// ヘッダー 0x3A書き込み
 	w_file->FputUint8(char(0x3A));
 	// スタートアドレス取得、書き込み
@@ -790,7 +880,7 @@ void w_body(void)
 // MONITOR Wコマンド .CMT SAVE
 void cmt_save(void)
 {
-	byte r_data, csum;
+	uint8_t r_data, csum;
 	// DOSファイル名取得
 	receive_name(m_name);
 	// ファイル名の指定が無ければエラー
@@ -1178,6 +1268,7 @@ unsigned __stdcall arduino_loop(void *lpx)
 void *arduino_loop(void *lpx)
 #endif
 {
+	printf("arduino_loop start\n");
 	volatile PC80SD *p = (PC80SD *)lpx;
 
 	current_pc80sd = (PC80SD *)p;
@@ -1186,8 +1277,15 @@ void *arduino_loop(void *lpx)
 	{
 		((PC80SD *)p)->write_signals_thread(1, 0);
 		((PC80SD *)p)->write_signals_thread(2, 0);
+		thread_sleep(1000);
 
+		printf("command wait...\n");
 		uint8_t cmd = rcv1byte();
+		printf("command received %d\n", (int)cmd);
+		if(p->request_terminate)
+		{
+			break;
+		}
 
 		////    Serial.println(cmd,HEX);
 		if (eflg == false)
@@ -1283,7 +1381,9 @@ void *arduino_loop(void *lpx)
 			case 0x83:
 				////    Serial.println("FILE LIST START");
 				// 状態コード送信(OK)
+				printf("dirlist ok send start\n");
 				snd1byte(0x00);
+				printf("dirlist ok send end\n");
 				dirlist();
 				break;
 			default:
@@ -1298,6 +1398,7 @@ void *arduino_loop(void *lpx)
 		}
 	}
 
+	printf("PC80SD thread end\n");
 #ifdef _MSC_VER
 	_endthreadex(0);
 	return 0;
@@ -1309,23 +1410,33 @@ void *arduino_loop(void *lpx)
 
 PC80SD::~PC80SD()
 {
+	printf("PC80SD destructor\n");
 	request_terminate = true;
 	thread_join(this);
+
+	printf("PC80SD destructor end\n");
+	release();
+	printf("PC80SD destructor end 2\n");
 }
 
 void PC80SD::initialize()
 {
-	InitializeCriticalSection(&signal_cs);
-
+	printf("PC80SD initialize\n");
 #if defined(_WIN32) || defined(_WIN64)
+	InitializeCriticalSection(&signal_cs);
 	threadHandle = _beginthreadex(NULL, 0, arduino_loop, this, 0, &threadID);
 #else
-	pthread_create(&threadID, NULL, (void *(*)(void *)) & MyClass::thread_function, this);
+	pthread_mutex_init(&mtx, NULL);
+	pthread_create(&threadID, NULL, (void *(*)(void *)) & arduino_loop, this);
 #endif
 	strcpy(w_name, "default.dat");
 
 	// 時間はテキトー(1.6MHz)
-	register_event(this, EVENT_TIMER, 0.625, true, NULL);
+	register_event(this, EVENT_TIMER, 0.625, true, &register_id);
+
+	signalQueue.Clear();
+	request_terminate = false;
+	sleep_counter = 0;
 }
 
 void PC80SD::release()
@@ -1339,10 +1450,36 @@ void PC80SD::release()
 
 void PC80SD::reset()
 {
+	printf("reset\n");
+
+	request_terminate = true;
+	thread_join(this);
+
+	release();
+
+	initialize();
+	printf("initialize end\n");
 }
 
 void PC80SD::write_signal(int id, uint32_t data, uint32_t mask)
 {
+	if(id == 2)
+	{
+		if(current_check == CHECK_HIGH)
+		{
+			if(data != 0)
+			{
+				current_check = NOCHECK;
+			}
+		} else if(current_check == CHECK_LOW)
+		{
+			if(data == 0)
+			{
+				current_check = NOCHECK;
+			}
+		}
+	}
+	printf("write signal(from Z80) %d %x %x\n", id, data, mask);
 	port[id].reg = (port[id].reg & ~mask) | (data & mask);
 }
 
@@ -1353,19 +1490,31 @@ void PC80SD::proc_signal()
 #else
 	pthread_mutex_lock(&mtx);
 #endif
-	if(sleep_counter > 0)
-	{
-		sleep_counter--;
-	}
-
 	// Queueに蓄積されたシグナルをメインスレッドで処理する
+	bool queue_proc = false;
+	if(!signalQueue.IsEmpty())
+	{
+		printf("Queue proc start ------------\n");
+		queue_proc = true;
+	}
 	while (!signalQueue.IsEmpty())
 	{
 		SignalNode *node = signalQueue.Front();
+		printf("signalQueue.Dequeue(to Z80) %d %d\n", node->ch, node->data);
 
 		write_signals(&port[node->ch].outputs, node->data);
 
 		signalQueue.Dequeue();
+	}
+	if(queue_proc)
+	{
+		printf("Queue proc end ------------\n");
+	}
+
+	if(sleep_counter > 0)
+	{
+		sleep_counter--;
+		// printf("sleep dec %d\n", sleep_counter);
 	}
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -1385,8 +1534,16 @@ void PC80SD::write_signals_thread(int id, uint32_t data)
 	if(id == -1)
 	{
 		sleep_counter = data;
+		// printf("sleep counter set %d\n", data);
 	} else {
+		// if(!signalQueue.IsEmpty())
+		// {
+		// 	printf("write_signals_thread: has queue\n");
+		// 	SignalNode *node = signalQueue.Front();
+		// 	printf("write_signals_thread: front: %d : %d\n", node->ch, node->data);
+		// }
 		signalQueue.Enqueue(id, data);
+		printf("signalQueue.Enqueue(to Z80) %d %d\n", id, data);
 	}
 
 #if defined(_WIN32) || defined(_WIN64)
