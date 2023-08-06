@@ -351,6 +351,23 @@ void PC88::initialize()
 		fio->Fclose();
 	}
 #endif
+
+#if defined(SUPPORT_PC80_SDCARD)
+	if(fio->Fopen(create_local_path(_T("EXT_ROM_SHIFT_OFF.bin")), FILEIO_READ_BINARY)) {
+		fio->Fread(n80sdrom, 0x2000, 1);
+		fio->Fclose();
+	} else if(fio->Fopen(create_local_path(_T("EXT_ROM_SHIFT_ON.bin")), FILEIO_READ_BINARY)) {
+		fio->Fread(n80sdrom, 0x2000, 1);
+		fio->Fclose();
+	} else if(fio->Fopen(create_local_path(_T("EXT_ROM_A_OFF.bin")), FILEIO_READ_BINARY)) {
+		fio->Fread(n80sdrom, 0x2000, 1);
+		fio->Fclose();
+	} else if(fio->Fopen(create_local_path(_T("EXT_ROM_A_ON.bin")), FILEIO_READ_BINARY)) {
+		fio->Fread(n80sdrom, 0x2000, 1);
+		fio->Fclose();
+	}
+#endif
+
 #if defined(_PC8001SR)
 	if(fio->Fopen(create_local_path(_T("N80_3.ROM")), FILEIO_READ_BINARY)) {
 		fio->Fread(n80srrom, 0xa000, 1);
@@ -525,7 +542,7 @@ void PC88::initialize()
 	// initialize cmt
 	cmt_fio = new FILEIO();
 	cmt_play = cmt_rec = false;
-	
+
 	register_frame_event(this);
 	register_vline_event(this);
 	register_event(this, EVENT_TIMER, 1000000.0 / 600.0, true, NULL);
@@ -1270,6 +1287,21 @@ void PC88::write_io8(uint32_t addr, uint32_t data)
 		}
 		break;
 #endif
+#ifdef SUPPORT_PC80_SDCARD
+		// for PC-8001mk2_SD
+	case 0x7c:	// PPI_A
+		d_sdcard->write_io8(0, data);
+		break;
+	case 0x7d:	// PPI_B
+		d_sdcard->write_io8(1, data);
+		break;
+	case 0x7e:	// PPI_C
+		d_sdcard->write_io8(2, data);
+		break;
+	case 0x7f:	// PPI_R
+		d_sdcard->write_io8(3, data);
+		break;
+#endif
 #else
 	case 0x71:
 		if(mod & 0x03) {
@@ -1762,6 +1794,20 @@ uint32_t PC88::read_io8_debug(uint32_t addr)
 		}
 		break;
 #endif
+
+#ifdef SUPPORT_PC80_SDCARD
+	// for PC-8001mk2_SD
+	case 0x7c:	// PPI_A
+		return d_sdcard->read_io8(0);
+	case 0x7d:	// PPI_B
+		return d_sdcard->read_io8(1);
+	case 0x7e:	// PPI_C
+		return d_sdcard->read_io8(2);
+	case 0x7f:	// PPI_R
+		return d_sdcard->read_io8(3);
+#endif
+
+
 #ifdef SUPPORT_PC88_HMB20
 //	case 0x88:
 	case 0x89:
@@ -2241,7 +2287,12 @@ void PC88::update_n80_read()
 			SET_BANK_R(0x6000, 0x7fff, n80erom);
 		} else
 #endif
+
+#ifdef SUPPORT_PC80_SDCARD
+		SET_BANK_R(0x6000, 0x7fff, n80sdrom);
+#else
 		SET_BANK_R(0x6000, 0x7fff, rdmy);
+#endif
 		return;
 	}
 #endif

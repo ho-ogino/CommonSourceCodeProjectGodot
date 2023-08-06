@@ -112,6 +112,7 @@
 	#define PC88_EXRAM_BANKS	1
 	#define SUPPORT_PC88_FDD_8INCH
 	#define SUPPORT_M88_DISKDRV
+	#define SUPPORT_PC80_SDCARD
 #elif defined(_PC8001)
 //	#define SUPPORT_PC88_KANJI1
 //	#define SUPPORT_PC88_KANJI2
@@ -342,6 +343,10 @@ class MEMORY;
 class DiskIO;
 #endif
 
+#ifdef SUPPORT_PC80_SDCARD
+class PC80SD;
+#endif
+
 class PC88;
 
 class VM : public VM_TEMPLATE
@@ -417,6 +422,11 @@ protected:
 	
 #ifdef SUPPORT_M88_DISKDRV
 	DiskIO* pc88diskio;
+#endif
+
+#ifdef SUPPORT_PC80_SDCARD
+	I8255* pc80sd_pio;
+	PC80SD* pc80sd_dev;
 #endif
 	
 	PC88* pc88;

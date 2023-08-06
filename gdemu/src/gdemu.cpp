@@ -81,6 +81,36 @@ static void file_copy(String from, String to)
     }
 }
 
+static void folder_copy(String folder_name)
+{
+
+    Ref<DirAccess> dir = DirAccess::open("user://");
+    if(!dir->dir_exists(folder_name))
+    {
+        dir->make_dir(folder_name);
+    }
+    // fromフォルダ内の全てのファイルをtoフォルダにコピーする
+    dir = DirAccess::open("res://" + folder_name);
+    dir->list_dir_begin();
+    String file = dir->get_next();
+    while(file != "")
+    {
+        String from_file = "res://" + folder_name + "/" + file;
+        String to_file = "user://" + folder_name + "/" + file;
+        if(dir->current_is_dir())
+        {
+            // フォルダは無視
+            file = dir->get_next();
+            continue;
+        }
+        else
+        {
+            // ファイルならコピー
+            dir->copy(from_file, to_file);
+        }
+        file = dir->get_next();
+    }
+}
 
 void GDEmu::setup()
 {
@@ -149,7 +179,13 @@ void GDEmu::init() {
 
 #if defined(_PC8001MK2)
     file_copy("res://N80_2.ROM", "user://N80_2.ROM");
+    file_copy("res://N80_3.ROM", "user://N80_3.ROM");
     file_copy("res://KANJI1.ROM", "user://KANJI1.ROM");
+    file_copy("res://EXT_ROM_SHIFT_OFF.bin", "user://EXT_ROM_SHIFT_OFF.bin");
+    file_copy("res://EXT_ROM_SHIFT_ON.bin", "user://EXT_ROM_SHIFT_ON.bin");
+    file_copy("res://EXT_ROM_A_OFF.bin", "user://EXT_ROM_A_OFF.bin");
+    file_copy("res://EXT_ROM_A_ON.bin", "user://EXT_ROM_A_ON.bin");
+    folder_copy("SD");
 #endif
 
     // フロッピーアクセス音

@@ -128,6 +128,7 @@ elif lenv["emu"] == "pc80mk2":
     sources.append("src/emulator/vm/pc8801/pc88.cpp")
     sources.append("src/emulator/vm/pc8801/pc8801.cpp")
     sources.append("src/emulator/vm/pc8801/diskio.cpp")
+    sources.append("src/emulator/vm/pc80sd.cpp")
 else:
     sources.append("src/emulator/vm/ay_3_891x.cpp")
     sources.append("src/emulator/vm/event.cpp")
