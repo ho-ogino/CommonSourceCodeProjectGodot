@@ -4,7 +4,7 @@ import sys
 
 opts = Variables([], ARGUMENTS)
 
-emu_array = ["", "x1", "x1t", "msx", "pc88ma"]
+emu_array = ["", "x1", "x1t", "msx", "pc88ma", "pc80mk2"]
 opts.Add(EnumVariable("emu", "Target emulator", "", emu_array))
 
 
@@ -31,6 +31,8 @@ if lenv["emu"] == "msx":
     env.Append(CPPDEFINES=['_MSX1'])
 elif lenv["emu"] == "pc88ma":
     env.Append(CPPDEFINES=['_PC8801MA'])
+elif lenv["emu"] == "pc80mk2":
+    env.Append(CPPDEFINES=['_PC8001MK2'])
 elif lenv["emu"] == "x1t":
     env.Append(CPPDEFINES=['_X1','_X1TURBO'])
 else:
@@ -77,6 +79,31 @@ if lenv["emu"] == "msx":
     sources.append("src/emulator/vm/msx/scc.cpp")
     sources.append("src/emulator/vm/msx/sound_cart.cpp")
 elif lenv["emu"] == "pc88ma":
+    sources.append("src/emulator/vm/disk.cpp")
+    sources.append("src/emulator/vm/harddisk.cpp")
+    sources.append("src/emulator/vm/event.cpp")
+    sources.append("src/emulator/vm/prnfile.cpp")
+    sources.append("src/emulator/vm/i8251.cpp")
+    sources.append("src/emulator/vm/i8255.cpp")
+    sources.append("src/emulator/vm/upd1990a.cpp")
+    sources.append("src/emulator/vm/ym2203.cpp")
+    sources.append("src/emulator/vm/z80.cpp")
+    sources.append("src/emulator/vm/noise.cpp")
+    sources.append("src/emulator/vm/pc80s31k.cpp")
+    sources.append("src/emulator/vm/upd765a.cpp")
+    sources.append("src/emulator/vm/scsi_dev.cpp")
+    sources.append("src/emulator/vm/scsi_hdd.cpp")
+    sources.append("src/emulator/vm/scsi_host.cpp")
+    sources.append("src/emulator/vm/scsi_cdrom.cpp")
+    sources.append("src/emulator/vm/ym2151.cpp")
+    sources.append("src/emulator/vm/ay_3_891x.cpp")
+    sources.append("src/emulator/vm/i8253.cpp")
+    sources.append("src/emulator/vm/pcm1bit.cpp")
+    sources.append("src/emulator/vm/pcm8bit.cpp")
+    sources.append("src/emulator/vm/pc8801/pc88.cpp")
+    sources.append("src/emulator/vm/pc8801/pc8801.cpp")
+    sources.append("src/emulator/vm/pc8801/diskio.cpp")
+elif lenv["emu"] == "pc80mk2":
     sources.append("src/emulator/vm/disk.cpp")
     sources.append("src/emulator/vm/harddisk.cpp")
     sources.append("src/emulator/vm/event.cpp")

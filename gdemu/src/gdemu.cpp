@@ -147,6 +147,11 @@ void GDEmu::init() {
     file_copy("res://N80.ROM", "user://N80.ROM");
 #endif
 
+#if defined(_PC8001MK2)
+    file_copy("res://N80_2.ROM", "user://N80_2.ROM");
+    file_copy("res://KANJI1.ROM", "user://KANJI1.ROM");
+#endif
+
     // フロッピーアクセス音
     file_copy("res://FDDSEEK.BIN", "user://FDDSEEK.WAV");
 
