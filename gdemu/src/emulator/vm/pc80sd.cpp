@@ -6,13 +6,10 @@
 	[ PC-8001(mk2)_SD ]
 */
 
+
 #include "pc80sd.h"
 #include "../fileio.h"
 
-#if !(defined(_WIN32) || defined(_WIN64))
-#include <dirent.h>
-#include <sys/stat.h>
-#endif
 
 #define EVENT_TIMER 1
 
@@ -22,18 +19,38 @@
 
 PC80SD *current_pc80sd;
 
-enum {
-	NOCHECK = 0,	
-	CHECK_LOW,
-	CHECK_HIGH,
-};
-int current_check = NOCHECK;
+static uint8_t cr_data[2] = {0x0d,0x00};
+static uint8_t end_data[2] = {0xff,0x00};
 
-#if defined(_WIN32) || defined(_WIN64)
-CRITICAL_SECTION signal_cs;
-#else
-pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-#endif
+enum pc80sd_state
+{
+	PC80SD_INITIALIZE = 0,
+	PC80SD_WAIT_COMMAND,
+
+	PC80SD_RCV4BIT,
+	PC80SD_RCV1BYTE,
+	PC80SD_SND1BYTE,
+	PC80SD_RCVBYTES,
+	PC80SD_SNDBYTES,
+	PC80SD_RCVNAME,
+	PC80SD_WBODY,
+
+	PC80SD_DIRLIST = 0x83,
+	PC80SD_CMT_SAVE = 0x70,
+	PC80SD_CMT_LOAD = 0x71,
+	PC80SD_CMT_5F9E = 0x72,
+	PC80SD_BAS_LOAD = 0x73,
+	PC80SD_BAS_SAVE = 0x74,
+	PC80SD_BAS_KILL = 0x75,
+	PC80SD_SD_ROPEN = 0x76,
+	PC80SD_SD_WAOPEN = 0x77,
+	PC80SD_SD_W1BYTE = 0x78,
+	PC80SD_SD_WNOPEN = 0x79,
+	PC80SD_SD_WDIRECT = 0x7A,
+	PC80SD_SD_WCLOSE = 0x7B,
+
+	PC80SD_WAIT,
+};
 
 // 保存フォルダ
 const _TCHAR *sd_folder_name = _T("SD");
@@ -49,72 +66,6 @@ bool eflg = false;
 unsigned int s_adrs, e_adrs, w_length, w_len1, w_len2, s_adrs1, s_adrs2, b_length;
 
 FILEIO *file, *w_file;
-
-class SDFileEntry
-{
-private:
-	bool _isValid;
-	char name[1024];
-
-public:
-	SDFileEntry()
-	{
-		invalidate();
-	}
-	void invalidate()
-	{
-		_isValid = false;
-	}
-	SDFileEntry(const char *name)
-	{
-		strncpy(this->name, name, strlen(name) + 1);
-		_isValid = true;
-	}
-
-	bool getName(char *name, int len)
-	{
-		if (!_isValid)
-		{
-			return false;
-		}
-		strncpy(name, this->name, len);
-		return true;
-	}
-
-	bool isValid() { return _isValid; }
-};
-
-class SDFile
-{
-private:
-	char base_path[1024];
-
-#if defined(_WIN32) || defined(_WIN64)
-	WIN32_FIND_DATA ffd;
-	char szDir[MAX_PATH];
-	HANDLE hFind = INVALID_HANDLE_VALUE;
-#else
-	DIR *dir;
-	struct dirent *ent;
-#endif
-	SDFileEntry currentEntry;
-
-public:
-	SDFile()
-	{
-		memset(base_path, 0, sizeof(base_path));
-	}
-	~SDFile()
-	{
-		close();
-	}
-	bool open(const char *path);
-	SDFileEntry openNextFile();
-	void rewindDirectory();
-	void close();
-	static bool exists(const char *path);
-	static bool remove(const char *path);
-};
 
 const _TCHAR *create_sd_path(const char *path)
 {
@@ -329,290 +280,6 @@ bool f_match(char *f_name, char *c_name)
 	return flg1;
 }
 
-void thread_join(volatile PC80SD *p)
-{
-#if defined(_WIN32) || defined(_WIN64)
-	WaitForSingleObject((HANDLE)p->threadHandle, INFINITE);
-	CloseHandle((HANDLE)p->threadHandle);
-#else
-	pthread_join(p->threadID, NULL);
-#endif
-}
-
-void thread_yield()
-{
-	// Yield to other threads
-#if defined(_WIN32) || defined(_WIN64)
-	SwitchToThread();
-#else
-	sched_yield();
-#endif
-}
-
-void thread_sleep(int timer_count)
-{
-	// pthread_mutex_lock(&mtx);
-	current_pc80sd->write_signals_thread(-1, timer_count);
-	// printf("thread_sleep: start %d\n", timer_count);
-	// pthread_mutex_unlock(&mtx);
-	while(current_pc80sd->sleep_counter > 0 && !current_pc80sd->request_terminate)
-	{
-		// printf("thread_sleep: rest %d\n", current_pc80sd->sleep_counter);
-		thread_yield();
-		// printf("thread_sleep: rest2 %d\n", current_pc80sd->sleep_counter);
-	}
-	// printf("thread_sleep: rest end %d\n", current_pc80sd->sleep_counter);
-
-//#if defined(_WIN32) || defined(_WIN64)
-//	// Windowsの場合
-//	Sleep(milliseconds); // 引数はミリ秒
-//#else
-//	// Linux/Macの場合
-//	usleep(microseconds); // 引数はマイクロ秒
-//#endif
-}
-
-uint8_t rcv4bit()
-{
-	printf("rcv4bit\n");
-	if(current_pc80sd->request_terminate)
-	{
-			return 0;
-	}
-
-	printf("rcv4bit: high wait\n");
-	// HIGHになるまでループ
-	if(!(current_pc80sd->port[2].reg & 0x4))
-	{
-		current_check = CHECK_HIGH;
-	}
-	// while ((current_pc80sd->port[2].reg & 0x4) == 0 && !current_pc80sd->request_terminate)
-	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
-	{
-		// printf("rcv4bit: high wait\n");
-		thread_yield();
-	}
-	if (current_pc80sd->request_terminate)
-	{
-		return 0;
-	}
-
-	// 受信
-	uint8_t j_data = current_pc80sd->port[0].reg & 0xf;
-
-	printf("rcv4bit: low wait\n");
-	// LOWになるまでループ
-	if((current_pc80sd->port[2].reg & 0x4))
-	{
-		current_check = CHECK_LOW;
-	}
-	// FLGをセット
-	current_pc80sd->write_signals_thread(2, 0x80);
-	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
-	{
-		// printf("rcv4bit: low wait\n");
-		thread_yield();
-	}
-	if (current_pc80sd->request_terminate)
-	{
-		return 0;
-	}
-
-	// FLGをリセット
-	current_pc80sd->write_signals_thread(2, 0x00);
-
-	
-	// 時間計測のために現在の時間を保存
-	struct timespec start_time, end_time;
-	clock_gettime(CLOCK_MONOTONIC, &start_time);
-
-	// 直後にrcv1byteした場合↑のLOWのチェックがZ80側でされない事があるのでそれなりに待ってやる
-	printf("receive end wait start\n");
-	thread_sleep(16000);
-	printf("receive end wait end\n");
-
-	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	double elapsed = (end_time.tv_sec - start_time.tv_sec) + (end_time.tv_nsec - start_time.tv_nsec) * 1e-9;
-	
-	printf("Elapsed time: %.9f seconds\n", elapsed);
-
-	//printf("rcv4bit end\n");
-	return (j_data);
-}
-
-// 1BYTE送信
-void snd1byte(uint8_t i_data)
-{
-	//printf("snd1byte\n");
-	if (current_pc80sd->request_terminate)
-	{
-		return;
-	}
-	// 下位ビットから8ビット分をセット
-	current_pc80sd->write_signals_thread(1, i_data);
-
-	// HIGHになるまでループ
-	if(!(current_pc80sd->port[2].reg & 0x4))
-	{
-		current_check = CHECK_HIGH;
-	}
-	// FLGPINをHIGHに
-	current_pc80sd->write_signals_thread(2, 0x80);
-
-	//printf("snd1byte high loop\n");
-	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
-	{
-		// printf("snd1byte: high wait\n");
-		thread_yield();
-	}
-	if (current_pc80sd->request_terminate)
-	{
-		return;
-	}
-
-	// LOWになるまでループ
-	if((current_pc80sd->port[2].reg & 0x4))
-	{
-		current_check = CHECK_LOW;
-	}
-	current_pc80sd->write_signals_thread(2, 0x00);
-
-	printf("snd1byte low loop\n");
-	//while ((current_pc80sd->port[2].reg & 0x4) != 0 && !current_pc80sd->request_terminate)
-	while (current_check != NOCHECK && !current_pc80sd->request_terminate)
-	{
-		// printf("snd1byte: low wait\n");
-		thread_yield();
-	}
-	if (current_pc80sd->request_terminate)
-	{
-		return;
-	}
-	printf("snd1byte end\n");
-}
-
-uint8_t rcv1byte()
-{
-	if(current_pc80sd->request_terminate)
-	{
-		return 0;
-	}
-	uint8_t i_data = 0;
-	i_data = rcv4bit() * 16;
-	i_data = i_data + rcv4bit();
-	return i_data;
-}
-
-// SD-CARDのFILELIST
-void dirlist()
-{
-	printf("dirlist\n");
-	// 比較文字列取得 32+1文字まで
-	for (unsigned int lp1 = 0; lp1 <= 32; lp1++)
-	{
-		c_name[lp1] = rcv1byte();
-	}
-	printf("dirlist 2\n");
-
-	SDFile file;
-	bool result = file.open(create_local_path(sd_folder_name));
-	if (result)
-	{
-		// 状態コード送信(OK)
-		printf("send ok\n");
-		snd1byte(0x00);
-		printf("send ok 2\n");
-
-		SDFileEntry entry = file.openNextFile();
-		int cntl2 = 0;
-		unsigned int br_chk = 0;
-		int page = 1;
-		// 全件出力の場合には16件出力したところで一時停止、キー入力により継続、打ち切りを選択
-		while (br_chk == 0)
-		{
-			if (entry.isValid())
-			{
-				entry.getName(f_name, 36);
-				unsigned int lp1 = 0;
-				// 一件送信
-				// 比較文字列でファイルネームを/re先頭10文字まで比較して一致するものだけを出力
-				if (f_match(f_name, c_name))
-				{
-					while (lp1 <= 36 && f_name[lp1] != 0x00)
-					{
-						snd1byte(upper(f_name[lp1]));
-						lp1++;
-					}
-					snd1byte(0x0D);
-					snd1byte(0x00);
-					cntl2++;
-				}
-			}
-			if (!entry.isValid() || cntl2 > 15)
-			{
-				// 継続・打ち切り選択指示要求
-				snd1byte(0xfe);
-
-				// 選択指示受信(0:継続 B:前ページ 以外:打ち切り)
-				br_chk = rcv1byte();
-				// 前ページ処理
-				if (br_chk == 0x42)
-				{
-					// 先頭ファイルへ
-					file.rewindDirectory();
-					// entry値更新
-					entry = file.openNextFile();
-					// もう一度先頭ファイルへ
-					file.rewindDirectory();
-					if (page <= 2)
-					{
-						// 現在ページが1ページ又は2ページなら1ページ目に戻る処理
-						page = 0;
-					}
-					else
-					{
-						// 現在ページが3ページ以降なら前々ページまでのファイルを読み飛ばす
-						page = page - 2;
-						cntl2 = 0;
-						while (cntl2 < page * 16)
-						{
-							entry = file.openNextFile();
-							if (f_match(f_name, c_name))
-							{
-								cntl2++;
-							}
-						}
-					}
-					br_chk = 0;
-				}
-				page++;
-				cntl2 = 0;
-			}
-			// ファイルがまだあるなら次読み込み、なければ打ち切り指示
-			if (entry.isValid())
-			{
-				entry = file.openNextFile();
-			}
-			else
-			{
-				br_chk = 1;
-			}
-			// FDLの結果が18件未満なら継続指示要求せずにそのまま終了
-			if (!entry.isValid() && cntl2 < 16 && page == 1)
-			{
-				break;
-			}
-		}
-		// 処理終了指示
-		snd1byte(0xFF);
-		snd1byte(0x00);
-	}
-	else
-	{
-		snd1byte(0xf1);
-	}
-}
-
 void addcmt(char *f_name, char *m_name)
 {
 	unsigned int lp1 = 0;
@@ -637,144 +304,535 @@ void addcmt(char *f_name, char *m_name)
 	m_name[lp1] = 0x00;
 }
 
-// 比較文字列取得 32+1文字まで取得、ただしダブルコーテーションは無視する
-void receive_name(char *f_name)
+PC80SD::~PC80SD()
 {
-	char r_data;
-	unsigned int lp2 = 0;
-	for (unsigned int lp1 = 0; lp1 <= 32; lp1++)
+	release();
+}
+
+void PC80SD::initialize()
+{
+	strcpy(w_name, "default.dat");
+
+	// 時間はテキトー(1.6MHz)
+	register_event(this, EVENT_TIMER, 0.625, true, &register_id);
+
+	stateStack.clear();
+}
+
+void PC80SD::release()
+{
+}
+
+void PC80SD::reset()
+{
+	release();
+
+	initialize();
+}
+
+void PC80SD::write_signal(int id, uint32_t data, uint32_t mask)
+{
+	// printf("write signal(from Z80) %d %x %x\n", id, data, mask);
+	port[id].reg = (port[id].reg & ~mask) | (data & mask);
+}
+
+void PC80SD::sendbytes(const uint8_t*data, int sz)
+{
+	stateStack.push(state);
+	stateStack.push(sub_state);
+	state = PC80SD_SNDBYTES;
+	sub_state = 0;
+	memcpy(send_datas, data, sz);
+	send_datas_count = sz;
+	send_datas_index = 0;
+}
+
+void PC80SD::receivebytes(int count)
+{
+	stateStack.push(state);
+	stateStack.push(sub_state);
+	state = PC80SD_RCVBYTES;
+	sub_state = 0;
+	receive_datas_count = count;
+	receive_datas_index = 0;
+}
+
+void PC80SD::receive1byte()
+{
+	stateStack.push(state);
+	stateStack.push(sub_state);
+	state = PC80SD_RCV1BYTE;
+	sub_state = 0;
+	result_value = 0;
+}
+
+void PC80SD::receive4bit()
+{
+	stateStack.push(state);
+	stateStack.push(sub_state);
+	state = PC80SD_RCV4BIT;
+	sub_state = 0;
+}
+
+void PC80SD::popstate()
+{
+	sub_state = stateStack.top();
+	stateStack.pop();
+	state = stateStack.top();
+	stateStack.pop();
+}
+
+void PC80SD::proc_command()
+{
+}
+
+void PC80SD::send1byte(uint8_t data)
+{
+	stateStack.push(state);
+	stateStack.push(sub_state);
+	state = PC80SD_SND1BYTE;
+	sub_state = 0;
+	send_value = data;
+}
+
+void PC80SD::loopend()
+{
+	state = PC80SD_INITIALIZE;
+	sub_state = 0;
+}
+
+void PC80SD::receivename(char *f_name)
+{
+	stateStack.push(state);
+	stateStack.push(sub_state);
+	state = PC80SD_RCVNAME;
+	sub_state = 0;
+	target_data = f_name;
+}
+
+void PC80SD::w_body(void)
+{
+	stateStack.push(state);
+	stateStack.push(sub_state);
+	state = PC80SD_WBODY;
+	sub_state = 0;
+}
+
+void PC80SD::w_body_proc()
+{
+	switch(sub_state)
 	{
-		r_data = rcv1byte();
-		if (r_data != 0x22)
+		case 0:
 		{
-			f_name[lp2] = r_data;
-			lp2++;
+			// ヘッダー 0x3A書き込み
+			w_file->FputUint8(char(0x3A));
+
+			sub_state++;
+			receivebytes(2);
+			break;
+		}
+		case 1:
+		{
+			// スタートアドレス取得、書き込み
+			s_adrs1 = receive_datas[0];
+			s_adrs2 = receive_datas[1];
+			w_file->FputUint8(s_adrs2);
+			w_file->FputUint8(s_adrs1);
+			// CHECK SUM計算、書き込み
+			csum = 0 - (s_adrs1 + s_adrs2);
+			w_file->FputUint8(csum);
+			// スタートアドレス算出
+			s_adrs = s_adrs1 + s_adrs2 * 256;
+
+			sub_state++;
+			receivebytes(2);
+			break;
+		}
+		case 2:
+		{
+			// エンドアドレス取得
+			s_adrs1 = receive_datas[0];
+			s_adrs2 = receive_datas[1];
+			// エンドアドレス算出
+			e_adrs = s_adrs1 + s_adrs2 * 256;
+			// ファイル長算出、ブロック数算出
+			w_length = e_adrs - s_adrs + 1;
+			w_len1 = w_length / 255;
+			w_len2 = w_length % 255;
+
+			sub_state++;
+			break;
+		}
+		case 3:
+		{
+			// 実データ受信、書き込み
+			// 0xFFブロック
+			if(w_len1 == 0)
+			{
+				sub_state = 100;
+				break;
+			}
+			w_file->FputUint8(char(0x3A));
+			w_file->FputUint8(char(0xFF));
+			csum = 0xff;
+			lp1 = 1;
+			sub_state++;
+			break;
+		}
+		case 4:
+		{
+			if(lp1 > 255)
+			{
+				sub_state = 6;
+				break;
+			}
+			sub_state++;
+			receive1byte();
+			break;
+		}
+		case 5:
+		{
+			r_data = result_value;
+			w_file->FputUint8(r_data);
+			csum = csum + r_data;
+			lp1++;
+			sub_state = 4;
+			break;
+		}
+		case 6:
+		{
+			// CHECK SUM計算、書き込み
+			csum = 0 - csum;
+			w_file->FputUint8(csum);
+			w_len1--;
+			sub_state = 3;
+			break;
+		}
+		case 100:
+		{
+			// 端数ブロック処理
+			if(w_len2 == 0)
+			{
+				sub_state = 200;
+				break;
+			}
+			w_file->FputUint8(char(0x3A));
+			w_file->FputUint8(w_len2);
+			csum = w_len2;
+			lp1 = 1;
+			sub_state++;
+			break;
+		}
+		case 101:
+		{
+			if(lp1 > w_len2)
+			{
+				sub_state = 103;
+				break;
+			}
+			sub_state++;
+			receive1byte();
+			break;
+		}
+		case 102:
+		{
+			r_data = result_value;
+			w_file->FputUint8(r_data);
+			csum = csum + r_data;
+			lp1++;
+			sub_state = 101;
+			break;
+		}
+		case 103:
+		{
+			// CHECK SUM計算、書き込み
+			csum = 0 - csum;
+			w_file->FputUint8(csum);
+			sub_state = 200;
+			break;
+		}
+		case 200:
+		{
+			w_file->FputUint8(char(0x3A));
+			w_file->FputUint8(char(0x00));
+			w_file->FputUint8(char(0x00));
+			sub_state = 1000;
+			break;
+		}
+		case 1000:
+		{
+			popstate();
+			break;
 		}
 	}
 }
 
-// MONITOR Lコマンド .CMT LOAD
-void cmt_load()
+void PC80SD::cmt_save_proc()
 {
-	bool flg = false;
-	// DOSファイル名取得
-	receive_name(m_name);
-	// ファイル名の指定があるか
-	if (m_name[0] != 0x00)
+	switch(sub_state)
 	{
-		addcmt(m_name, f_name);
-
-		// 指定があった場合
-		// ファイルが存在しなければERROR
-		if (SDFile::exists(f_name) == true)
+		case 0:
 		{
-			// ファイルオープン
-			file = new FILEIO();
-			if (file->Fopen(create_local_path("%s/%s", sd_folder_name,  f_name), FILEIO_READ_BINARY))
-			{
-				// f_length設定、r_count初期化
-				f_length = file->FileLength();
-				r_count = 0;
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				flg = true;
-			}
-			else
-			{
-				snd1byte(0xf0);
-				flg = false;
-			}
+			sub_state++;
+			send1byte(0x00);
+			break;
 		}
-		else
+		case 1:
 		{
-			snd1byte(0xf1);
-			flg = false;
+			sub_state++;
+			receivename(m_name);
+			break;
+		}
+		case 2:
+		{
+			if(m_name[0] != 0x00)
+			{
+				addcmt(m_name, f_name);
+
+				if(w_file)
+				{
+					w_file->Fclose();
+				}
+
+				// ファイルが存在すればdelete
+				if(SDFile::exists(f_name))
+				{
+					SDFile::remove(f_name);
+				}
+
+				// ファイルオープン
+				w_file = new FILEIO();
+				if (w_file->Fopen(create_sd_path(f_name), FILEIO_WRITE_BINARY))
+				{
+					sub_state++;
+					send1byte(0x00);
+					break;
+				} else{
+					sub_state = 1000;
+					send1byte(0xf0);
+					break;
+				}
+			} else {
+				sub_state = 1000;
+				send1byte(0xf6);
+				break;
+			}
+			break;
+		}
+		case 3:
+		{
+			sub_state++;
+			w_body();
+			break;
+		}
+		case 4:
+		{
+			w_file->Fclose();
+			delete w_file;
+			w_file = nullptr;
+			sub_state = 1000;
+			break;
+		}
+		case 100:
+		{
+			break;
+		}
+
+		case 1000:
+		{
+			loopend();
+			break;
 		}
 	}
-	else
+}
+
+void PC80SD::cmt_load_proc()
+{
+	switch(sub_state)
 	{
-		// ファイル名の指定がなかった場合
-		// ファイルエンドになっていないか
-		if (f_length > r_count)
+		case 0:
 		{
-			snd1byte(0x00);
-			flg = true;
+			sub_state=123;
+			send1byte(0x00);
+			break;
 		}
-		else
+		case 123:
 		{
-			snd1byte(0xf1);
 			flg = false;
+			sub_state=1;
+			receivename(m_name);
+			break;
 		}
-	}
-
-	// 良ければファイルエンドまで読み込みを続行する
-	if (flg == true)
-	{
-		int rdata = 0;
-
-		// ヘッダーが出てくるまで読み飛ばし
-		while (rdata != 0x3a && rdata != 0xd3)
+		case 1:
 		{
-			rdata = file->FgetUint8();
-			r_count++;
+			if(m_name[0] != 0x00)
+			{
+				addcmt(m_name, f_name);
+
+				// 指定があった場合
+				// ファイルが存在しなければERROR
+				if (SDFile::exists(f_name) == true)
+				{
+					// ファイルオープン
+					file = new FILEIO();
+					if (file->Fopen(create_local_path("%s/%s", sd_folder_name,  f_name), FILEIO_READ_BINARY))
+					{
+						// f_length設定、r_count初期化
+						f_length = file->FileLength();
+						r_count = 0;
+						// 状態コード送信(OK)
+						flg = true;
+						sub_state++;
+						send1byte(0x00);
+					}
+					else
+					{
+						sub_state++;
+						send1byte(0xf0);
+						flg = false;
+					}
+				}
+				else
+				{
+					sub_state++;
+					send1byte(0xf1);
+					flg = false;
+				}
+			} else {
+				sub_state = 100;
+			}
+			break;
 		}
-		// ヘッダー送信
-		snd1byte(rdata);
-
-		// ヘッダーが0x3aなら続行、違えばエラー
-		if (rdata == 0x3a)
+		case 2:
 		{
-			// START ADDRESS HIを送信
-			s_adrs1 = file->FgetUint8();
-			r_count++;
-			snd1byte(s_adrs1);
+			if(flg == false)
+			{
+				sub_state = 1000;
+				break;
+			}
+			rdata = 0;
 
+			// ヘッダーが出てくるまで読み飛ばし
+			while (rdata != 0x3a && rdata != 0xd3)
+			{
+				rdata = file->FgetUint8();
+				r_count++;
+			}
+			sub_state++;
+			send1byte(rdata);
+			break;
+		}
+		case 3:
+		{
+			// ヘッダーが0x3aなら続行、違えばエラー
+			if (rdata == 0x3a)
+			{
+				// START ADDRESS HIを送信
+				s_adrs1 = file->FgetUint8();
+				r_count++;
+				sub_state++;
+				send1byte(s_adrs1);
+			} else {
+				file->Fclose();
+				delete file;
+				file = nullptr;
+				sub_state = 1000;
+				break;
+			}
+			break;
+		}
+		case 4:
+		{
 			// START ADDRESS LOを送信
 			s_adrs2 = file->FgetUint8();
 			r_count++;
-			snd1byte(s_adrs2);
+			sub_state++;
+			send1byte(s_adrs2);
 			s_adrs = s_adrs1 * 256 + s_adrs2;
-
+			break;
+		}
+		case 5:
+		{
 			// CHECK SUMを送信
 			rdata = file->FgetUint8();
 			r_count++;
-			snd1byte(rdata);
-
+			sub_state++;
+			send1byte(rdata);
+			break;
+		}
+		case 6:
+		{
 			// HEADERを送信
 			rdata = file->FgetUint8();
 			r_count++;
-			snd1byte(rdata);
-
+			sub_state++;
+			send1byte(rdata);
+			break;
+		}
+		case 7:
+		{
 			// データ長を送信
 			b_length = file->FgetUint8();
 			r_count++;
-			snd1byte(b_length);
-
+			sub_state++;
+			send1byte(b_length);
+			break;
+		}
+		case 8:
+		{
 			// データ長が0x00でない間ループする
-			while (b_length != 0x00)
+			if (b_length == 0x00)
 			{
-				for (unsigned int lp1 = 0; lp1 <= b_length; lp1++)
-				{
-					// 実データを読み込んで送信
-					rdata = file->FgetUint8();
-					r_count++;
-					snd1byte(rdata);
-				}
-				// CHECK SUMを送信
-				rdata = file->FgetUint8();
-				r_count++;
-				snd1byte(rdata);
-				// データ長を送信
-				b_length = file->FgetUint8();
-				r_count++;
-				snd1byte(b_length);
+				sub_state = 70;
+				break;
 			}
+			lp1 = 0;
+			sub_state++;
+			break;
+		}
+		case 9:
+		{
+			if(lp1 > b_length)
+			{
+				sub_state = 10;
+				break;
+			}
+			rdata = file->FgetUint8();
+			r_count++;
+			send1byte(rdata);
+			lp1++;
+			break;
+		}
+		case 10:
+		{
+			// CHECK SUMを送信
+			rdata = file->FgetUint8();
+			r_count++;
+			sub_state++;
+			send1byte(rdata);
+			break;
+		}
+		case 11:
+		{
+			// データ長を送信
+			b_length = file->FgetUint8();
+			r_count++;
+			sub_state=8;
+			send1byte(b_length);
+			break;
+		}
+		case 70:
+		{
 			// データ長が0x00だった時の後処理
 			// CHECK SUMを送信
 			rdata = file->FgetUint8();
 			r_count++;
-			snd1byte(rdata);
-
+			sub_state++;
+			send1byte(rdata);
+			break;
+		}
+		case 71:
+		{
 			// ファイルエンドに達していたらFILE CLOSE
 			if (f_length == r_count)
 			{
@@ -782,181 +840,331 @@ void cmt_load()
 				delete file;
 				file = nullptr;
 			}
+			sub_state = 1000;
+			break;
 		}
-		else
+
+		case 100:
 		{
-			file->Fclose();
-			delete file;
-			file = nullptr;
+			// ファイル名の指定がなかった場合
+			// ファイルエンドになっていないか
+			if (f_length > r_count)
+			{
+				sub_state++;
+				send1byte(0x00);
+				flg = true;
+			}
+			else
+			{
+				sub_state++;
+				send1byte(0xf1);
+				flg = false;
+			}
+			break;
+		}
+		case 101:
+		{
+			sub_state = 2;
+			break;
+		}
+
+		case 1000:
+		{
+			loopend();
+			break;
 		}
 	}
 }
 
-// 5F9EH CMT 1Byte読み込み処理の代替、OPENしているファイルの続きから1Byteを読み込み、送信
-void cmt_5f9e(void)
+void PC80SD::cmt_5f9e_proc()
 {
-	if (file == nullptr)
+	switch(sub_state)
 	{
-		// 開いてない
-		return;
-	}
-	int rdata = file->FgetUint8();
-	r_count++;
-	snd1byte(rdata);
-	// ファイルエンドまで達していればFILE CLOSE
-	if (f_length == r_count)
-	{
-		file->Fclose();
-		delete file;
-		file = nullptr;
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
+			if(file == nullptr)
+			{
+				sub_state = 1000;
+				break;
+			}
+			rdata = file->FgetUint8();
+			r_count++;
+			sub_state++;
+			send1byte(rdata);
+			break;
+		}
+		case 2:
+		{
+			// ファイルエンドまで達していればFILE CLOSE
+			if (f_length == r_count)
+			{
+				file->Fclose();
+				delete file;
+				file = nullptr;
+			}
+			sub_state = 1000;
+			break;
+		}
+		case 1000:
+		{
+			loopend();
+			break;
+		}
 	}
 }
 
-void w_body(void)
+void PC80SD::bas_load_proc()
 {
-	uint8_t r_data, csum;
-	// ヘッダー 0x3A書き込み
-	w_file->FputUint8(char(0x3A));
-	// スタートアドレス取得、書き込み
-	s_adrs1 = rcv1byte();
-	s_adrs2 = rcv1byte();
-	w_file->FputUint8(s_adrs2);
-	w_file->FputUint8(s_adrs1);
-	// CHECK SUM計算、書き込み
-	csum = 0 - (s_adrs1 + s_adrs2);
-	w_file->FputUint8(csum);
-	// スタートアドレス算出
-	s_adrs = s_adrs1 + s_adrs2 * 256;
-	// エンドアドレス取得
-	s_adrs1 = rcv1byte();
-	s_adrs2 = rcv1byte();
-	// エンドアドレス算出
-	e_adrs = s_adrs1 + s_adrs2 * 256;
-	// ファイル長算出、ブロック数算出
-	w_length = e_adrs - s_adrs + 1;
-	w_len1 = w_length / 255;
-	w_len2 = w_length % 255;
-
-	// 実データ受信、書き込み
-	// 0xFFブロック
-	while (w_len1 > 0)
+	switch(sub_state)
 	{
-		w_file->FputUint8(char(0x3A));
-		w_file->FputUint8(char(0xFF));
-		csum = 0xff;
-		for (unsigned int lp1 = 1; lp1 <= 255; lp1++)
+		case 0:
 		{
-			r_data = rcv1byte();
-			w_file->FputUint8(r_data);
-			csum = csum + r_data;
+			sub_state++;
+			send1byte(0x00);
+			break;
 		}
-		// CHECK SUM計算、書き込み
-		csum = 0 - csum;
-		w_file->FputUint8(csum);
-		w_len1--;
-	}
+		case 1:
+		{
+			flg = false;
+			sub_state++;
+			receivename(m_name);
+			break;
+		}
+		case 2:
+		{
+			if(m_name[0] != 0x00)
+			{
+				addcmt(m_name, f_name);
 
-	// 端数ブロック処理
-	if (w_len2 > 0)
-	{
-		w_file->FputUint8(char(0x3A));
-		w_file->FputUint8(w_len2);
-		csum = w_len2;
-		for (unsigned int lp1 = 1; lp1 <= w_len2; lp1++)
-		{
-			r_data = rcv1byte();
-			w_file->FputUint8(r_data);
-			csum = csum + r_data;
+				// 指定があった場合
+				// ファイルが存在しなければERROR
+				if (SDFile::exists(f_name) == true)
+				{
+					// ファイルオープン
+					file = new FILEIO();
+					if (file->Fopen(create_local_path("%s/%s", sd_folder_name,  f_name), FILEIO_READ_BINARY))
+					{
+						// f_length設定、r_count初期化
+						f_length = file->FileLength();
+						r_count = 0;
+						// 状態コード送信(OK)
+						flg = true;
+						sub_state++;
+						send1byte(0x00);
+					}
+					else
+					{
+						sub_state++;
+						send1byte(0xf0);
+						flg = false;
+					}
+				}
+				else
+				{
+					sub_state++;
+					send1byte(0xf1);
+					flg = false;
+				}
+			} else {
+				sub_state = 100;
+			}
+			break;
 		}
-		// CHECK SUM計算、書き込み
-		csum = 0 - csum;
-		w_file->FputUint8(csum);
+		case 3:
+		{
+			if(flg == false)
+			{
+				sub_state = 1000;
+				break;
+			}
+			rdata = 0;
+
+			// ヘッダーが出てくるまで読み飛ばし
+			while (rdata != 0x3a && rdata != 0xd3)
+			{
+				rdata = file->FgetUint8();
+				r_count++;
+			}
+			sub_state++;
+			// ヘッダー送信
+			send1byte(rdata);
+			break;
+		}
+		case 4:
+		{
+			// ヘッダーが0xd3なら続行、違えばエラー
+			if (rdata == 0xd3)
+			{
+				while (rdata == 0xd3)
+				{
+					rdata = file->FgetUint8();
+					r_count++;
+				}
+
+				// 実データ送信
+				zcnt = 0;
+				zdata = 1;
+
+				sub_state++;
+				send1byte(rdata);
+			} else {
+				file->Fclose();
+				delete file;
+				file = nullptr;
+				sub_state = 1000;
+				break;
+			}
+			break;
+		}
+		case 5:
+		{
+			// 0x00が11個続くまで読み込み、送信
+			if(zcnt >= 11)
+			{
+				sub_state = 50;
+				break;
+			}
+
+			rdata = file->FgetUint8();
+			r_count++;
+			sub_state++;
+			send1byte(rdata);
+			break;
+		}
+		case 6:
+		{
+			if (rdata == 0x00)
+			{
+				zcnt++;
+				if (zdata != 0)
+				{
+					zcnt = 0;
+				}
+			}
+			zdata = rdata;
+			sub_state = 5;
+			break;
+		}
+		case 50:
+		{
+			// ファイルエンドに達していたらFILE CLOSE
+			if (f_length == r_count)
+			{
+				file->Fclose();
+				delete file;
+				file = nullptr;
+			}
+			sub_state = 1000;
+			break;
+		}
+
+		case 100:
+		{
+			// ファイル名の指定がなかった場V合
+			// ファイルエンドになっていないか
+			if (f_length > r_count)
+			{
+				sub_state=3;
+				send1byte(0x00);
+				flg = true;
+			}
+			else
+			{
+				sub_state=3;
+				send1byte(0xf1);
+				flg = false;
+			}
+			break;
+		}
+
+		case 1000:
+		{
+			loopend();
+			break;
+		}
 	}
-	w_file->FputUint8(char(0x3A));
-	w_file->FputUint8(char(0x00));
-	w_file->FputUint8(char(0x00));
 }
 
-// MONITOR Wコマンド .CMT SAVE
-void cmt_save(void)
+void PC80SD::bas_save_proc()
 {
-	uint8_t r_data, csum;
-	// DOSファイル名取得
-	receive_name(m_name);
-	// ファイル名の指定が無ければエラー
-	if (m_name[0] != 0x00)
+	switch(sub_state)
 	{
-		addcmt(m_name, f_name);
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
+			flg = false;
+			sub_state++;
+			receivename(m_name);
+			break;
+		}
+		case 2:
+		{
+			if(m_name[0] != 0x00)
+			{
+				addcmt(m_name, f_name);
 
-		if (w_file != nullptr)
-		{
-			w_file->Fclose();
-		}
-		// ファイルが存在すればdelete
-		if (SDFile::exists(f_name) == true)
-		{
-			SDFile::remove(f_name);
-		}
-		// ファイルオープン
-		w_file = new FILEIO();
-		//  SD.open( f_name, FILE_WRITE );
-		if (w_file->Fopen(create_sd_path(f_name), FILEIO_WRITE_BINARY))
-		{
-			// 状態コード送信(OK)
-			snd1byte(0x00);
-			w_body();
-			w_file->Fclose();
-			delete w_file;
-			w_file = nullptr;
-		}
-		else
-		{
-			snd1byte(0xf0);
-		}
-	}
-	else
-	{
-		snd1byte(0xf6);
-	}
-}
+				if(w_file)
+				{
+					w_file->Fclose();
+				}
 
-// BASICプログラムのSAVE処理
-void bas_save(void)
-{
-	unsigned int lp1;
+				// ファイルが存在すればdelete
+				if(SDFile::exists(f_name))
+				{
+					SDFile::remove(f_name);
+				}
 
-	// DOSファイル名取得
-	receive_name(m_name);
-	// ファイル名の指定が無ければエラー
-	if (m_name[0] != 0x00)
-	{
-		addcmt(m_name, f_name);
-
-		if (w_file)
-		{
-			w_file->Fclose();
+				// ファイルオープン
+				w_file = new FILEIO();
+				if (w_file->Fopen(create_sd_path(f_name), FILEIO_WRITE_BINARY))
+				{
+					sub_state++;
+					send1byte(0x00);
+					break;
+				} else{
+					sub_state = 1000;
+					send1byte(0xf0);
+					break;
+				}
+			} else {
+				sub_state = 100;
+			}
+			break;
 		}
-		// ファイルが存在すればdelete
-		if (SDFile::exists(f_name) == true)
+		case 3:
 		{
-			SDFile::remove(f_name);
-		}
-		// ファイルオープン
-		//  w_file = SD.open( f_name, FILE_WRITE );
-		w_file = new FILEIO();
-		if (w_file->Fopen(create_sd_path(f_name), FILEIO_WRITE_BINARY))
-		{
-			// 状態コード送信(OK)
-			snd1byte(0x00);
-
+			sub_state++;
 			// スタートアドレス取得
-			s_adrs1 = rcv1byte();
-			s_adrs2 = rcv1byte();
+			receivebytes(2);
+			break;
+		}
+		case 4:
+		{
+			s_adrs1 = receive_datas[0];
+			s_adrs2 = receive_datas[1];
 			// スタートアドレス算出
 			s_adrs = s_adrs1 + s_adrs2 * 256;
+
+			sub_state++;
 			// エンドアドレス取得
-			s_adrs1 = rcv1byte();
-			s_adrs2 = rcv1byte();
+			receivebytes(2);
+			break;
+		}
+		case 5:
+		{
+			s_adrs1 = receive_datas[0];
+			s_adrs2 = receive_datas[1];
 			// エンドアドレス算出
 			e_adrs = s_adrs1 + s_adrs2 * 256;
 			// ヘッダー 0xD3 x 9回書き込み
@@ -969,11 +1177,30 @@ void bas_save(void)
 			{
 				w_file->FputUint8(m_name[lp1]);
 			}
-			// 実データ (e_adrs - s_adrs +1)を受信、書き込み
-			for (lp1 = s_adrs; lp1 <= e_adrs; lp1++)
+			lp1 = s_adrs;
+			sub_state++;
+			break;
+		}
+		case 6:
+		{
+			if(lp1 > e_adrs)
 			{
-				w_file->FputUint8(rcv1byte());
+				sub_state = 8;
+				break;
 			}
+			sub_state++;
+			receive1byte();
+			break;
+		}
+		case 7:
+		{
+			w_file->FputUint8(result_value);
+			lp1++;
+			sub_state = 6;
+			break;
+		}
+		case 8:
+		{
 			// 終了 0x00 x 9回書き込み
 			for (lp1 = 1; lp1 <= 9; lp1++)
 			{
@@ -982,575 +1209,803 @@ void bas_save(void)
 			w_file->Fclose();
 			delete w_file;
 			w_file = nullptr;
+			sub_state = 1000;
+			break;
 		}
-		else
+		case 100:
 		{
-			snd1byte(0xf0);
+			sub_state = 1000;
+			send1byte(0xf1);
+			break;
 		}
-	}
-	else
-	{
-		snd1byte(0xf1);
+
+		case 1000:
+		{
+			loopend();
+			break;
+		}
 	}
 }
 
-// BASICプログラムのKILL処理
-void bas_kill(void)
+void PC80SD::bas_kill_proc()
 {
-	unsigned int lp1;
-
-	// DOSファイル名取得
-	receive_name(m_name);
-	// ファイル名の指定が無ければエラー
-	if (m_name[0] != 0x00)
+	switch(sub_state)
 	{
-		addcmt(m_name, f_name);
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
+			flg = false;
+			sub_state++;
+			receivename(m_name);
+			break;
+		}
+		case 2:
+		{
+			if(m_name[0] != 0x00)
+			{
+				addcmt(m_name, f_name);
 
-		// 状態コード送信(OK)
-		snd1byte(0x00);
-		// ファイルが存在すればdelete
-		if (SDFile::exists(f_name) == true)
-		{
-			SDFile::remove(f_name);
-			// 状態コード送信(OK)
-			snd1byte(0x00);
+				// 状態コード送信(OK)
+				sub_state++;
+				send1byte(0x00);
+			} else {
+				sub_state = 100;
+			}
+			break;
 		}
-		else
+		case 3:
 		{
-			snd1byte(0xf1);
+			// ファイルが存在すればdelete
+			if(SDFile::exists(f_name))
+			{
+				SDFile::remove(f_name);
+				sub_state = 1000;
+				send1byte(0x00);
+				break;
+			} else {
+				sub_state = 1000;
+				send1byte(0xf1);
+				break;
+			}
 		}
-	}
-	else
-	{
-		snd1byte(0xf1);
+		case 100:
+		{
+			sub_state = 1000;
+			send1byte(0xf1);
+			break;
+		}
+		case 1000:
+		{
+			loopend();
+			break;
+		}
 	}
 }
 
-// BASICプログラムのLOAD処理
-void bas_load(void)
+void PC80SD::sd_ropen_proc()
 {
-	bool flg = false;
-	// DOSファイル名取得
-	receive_name(m_name);
-	// ファイル名の指定があるか
-	if (m_name[0] != 0x00)
+	switch(sub_state)
 	{
-		addcmt(m_name, f_name);
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
+			flg = false;
+			sub_state++;
+			receivename(f_name);
+			break;
+		}
+		case 2:
+		{
+			// ファイルが存在しなければERROR
+			if (SDFile::exists(f_name) == true)
+			{
+				file = new FILEIO();
+				if (file->Fopen(create_sd_path(f_name), FILEIO_READ_BINARY))
+				{
+					// f_length設定、r_count初期化
+					f_length = file->FileLength();
+					r_count = 0;
+					// 状態コード送信(OK)
+					sub_state=1000;
+					send1byte(0x00);
+					break;
+				} else {
+					sub_state=1000;
+					send1byte(0xf0);
+					break;
+				}
+			} else {
+				sub_state=1000;
+				send1byte(0xf1);
+				break;
+			}
+		}
+		case 1000:
+		{
+			loopend();
+			break;
+		}
+	}
+}
 
-		// 指定があった場合
-		// ファイルが存在しなければERROR
-		if (SDFile::exists(f_name) == true)
+void PC80SD::sd_waopen_proc()
+{
+	switch(sub_state)
+	{
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
+			flg = false;
+			sub_state++;
+			receivename(m_name);
+			break;
+		}
+		case 2:
 		{
 			// ファイルオープン
-			file = new FILEIO();
-			// file = filSD.open( f_name, FILE_READ );
-			//  if( true == file ){
-			if (file->Fopen(create_sd_path(f_name), FILEIO_READ_BINARY))
+			if (w_file != nullptr)
 			{
-				// f_length設定、r_count初期化
-				f_length = file->FileLength();
-				r_count = 0;
+				w_file->Fclose();
+			}
+
+			w_file = new FILEIO();
+			if (w_file->Fopen(create_sd_path(w_name), FILEIO_WRITE_BINARY))
+			{
+				// Appendなのでこれでいいのかな……？
+				w_file->Fseek(0, FILEIO_SEEK_END);
+
+				sub_state = 1000;
 				// 状態コード送信(OK)
-				snd1byte(0x00);
-				flg = true;
+				send1byte(0x00);
 			}
 			else
 			{
-				snd1byte(0xf0);
-				flg = false;
+				sub_state = 1000;
+				send1byte(0xf0);
 			}
+			break;
 		}
-		else
+		case 1000:
 		{
-			snd1byte(0xf1);
+			loopend();
+			break;
+		}
+	}
+}
+
+
+void PC80SD::sd_w1byte_proc()
+{
+	switch(sub_state)
+	{
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
+			sub_state++;
+			receive1byte();
+			break;
+		}
+		case 2:
+		{
+			int rdata = result_value;
+			if (w_file != nullptr)
+			{
+				w_file->FputUint8(rdata);
+				sub_state = 1000;
+				// 状態コード送信(OK)
+				send1byte(0x00);
+			}
+			else
+			{
+				sub_state = 1000;
+				send1byte(0xf0);
+			}
+			break;
+		}
+		case 1000:
+		{
+			loopend();
+			break;
+		}
+	}
+}
+
+void PC80SD::sd_wnopen_proc()
+{
+	switch(sub_state)
+	{
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
 			flg = false;
+			sub_state++;
+			receivename(m_name);
+			break;
 		}
-	}
-	else
-	{
-		// ファイル名の指定がなかった場合
-		// ファイルエンドになっていないか
-		if (f_length > r_count)
+		case 2:
 		{
-			snd1byte(0x00);
-			flg = true;
-		}
-		else
-		{
-			snd1byte(0xf1);
-			flg = false;
-		}
-	}
-	// 良ければファイルエンドまで読み込みを続行する
-	if (flg == true)
-	{
-		int rdata = 0;
-
-		// ヘッダーが出てくるまで読み飛ばし
-		while (rdata != 0x3a && rdata != 0xd3)
-		{
-			rdata = file->FgetUint8();
-			r_count++;
-		}
-		// ヘッダー送信
-		snd1byte(rdata);
-		// ヘッダーが0xd3なら続行、違えばエラー
-		if (rdata == 0xd3)
-		{
-			while (rdata == 0xd3)
+			if (w_file != nullptr)
 			{
-				rdata = file->FgetUint8();
-				r_count++;
+				w_file->Fclose();
 			}
 
-			// 実データ送信
-			int zcnt = 0;
-			int zdata = 1;
-
-			snd1byte(rdata);
-
-			// 0x00が11個続くまで読み込み、送信
-			while (zcnt < 11)
+			// ファイルが存在すればdelete
+			if (SDFile::exists(w_name))
 			{
-				rdata = file->FgetUint8();
-				r_count++;
-				snd1byte(rdata);
-				if (rdata == 0x00)
-				{
-					zcnt++;
-					if (zdata != 0)
-					{
-						zcnt = 0;
-					}
-				}
-				zdata = rdata;
+				SDFile::remove(w_name);
 			}
 
-			// ファイルエンドに達していたらFILE CLOSE
-			if (f_length == r_count)
+			// ファイルオープン
+			w_file = new FILEIO();
+			if (w_file->Fopen(create_sd_path(w_name), FILEIO_WRITE_BINARY))
 			{
-				file->Fclose();
-				delete file;
-				file = nullptr;
+				sub_state = 1000;
+				// 状態コード送信(OK)
+				send1byte(0x00);
 			}
+			else
+			{
+				sub_state = 1000;
+				send1byte(0xf0);
+			}
+			break;
 		}
-		else
+		case 1000:
 		{
-			file->Fclose();
-			delete file;
-			file = nullptr;
+			loopend();
+			break;
 		}
-	}
-}
-
-// read file open
-void sd_ropen(void)
-{
-	receive_name(f_name);
-	// ファイルが存在しなければERROR
-	if (SDFile::exists(f_name) == true)
-	{
-		// ファイルオープン
-		//  file = SD.open( f_name, FILE_READ );
-		file = new FILEIO();
-		if (file->Fopen(create_sd_path(f_name), FILEIO_READ_BINARY))
-		{
-			// f_length設定、r_count初期化
-			f_length = file->FileLength();
-			r_count = 0;
-			// 状態コード送信(OK)
-			snd1byte(0x00);
-		}
-		else
-		{
-			snd1byte(0xf0);
-		}
-	}
-	else
-	{
-		snd1byte(0xf1);
-	}
-}
-
-// write file append open
-void sd_waopen(void)
-{
-	receive_name(w_name);
-	// ファイルオープン
-	if (w_file != nullptr)
-	{
-		w_file->Fclose();
-	}
-	// SD.open( w_name, FILE_WRITE );
-	w_file = new FILEIO();
-	if (w_file->Fopen(create_sd_path(w_name), FILEIO_WRITE_BINARY))
-	{
-		// 状態コード送信(OK)
-		snd1byte(0x00);
-	}
-	else
-	{
-		snd1byte(0xf0);
-	}
-}
-
-// write file new open
-void sd_wnopen(void)
-{
-	receive_name(w_name);
-	if (w_file != nullptr)
-	{
-		w_file->Fclose();
-	}
-	// ファイルが存在すればdelete
-	if (SDFile::exists(w_name))
-	{
-		SDFile::remove(w_name);
-	}
-	// ファイルオープン
-	w_file = new FILEIO();
-	if (w_file->Fopen(create_sd_path(w_name), FILEIO_WRITE_BINARY))
-	{
-		// 状態コード送信(OK)
-		snd1byte(0x00);
-	}
-	else
-	{
-		snd1byte(0xf0);
 	}
 }
 
 // 5ED9H代替
-void sd_wdirect(void)
+void PC80SD::sd_wdirect_proc()
 {
-	if (w_file != nullptr)
+	switch(sub_state)
 	{
-		w_body();
-		w_file->Fclose();
-		delete w_file;
-		w_file = nullptr;
-		// 状態コード送信(OK)
-		snd1byte(0x00);
-	}
-	else
-	{
-		snd1byte(0xf0);
+		case 0:
+		{
+			sub_state++;
+			send1byte(0x00);
+			break;
+		}
+		case 1:
+		{
+			if (w_file != nullptr)
+			{
+				sub_state++;
+				w_body();
+			}
+			else
+			{
+				sub_state = 1000;
+				send1byte(0xf0);
+				break;
+			}
+			break;
+		}
+		case 2:
+		{
+			w_file->Fclose();
+			delete w_file;
+			w_file = nullptr;
+			// 状態コード送信(OK)
+			sub_state = 1000;
+			send1byte(0x00);
+			break;
+		}
+		case 1000:
+		{
+			loopend();
+			break;
+		}
 	}
 }
 
 // write file close
-void sd_wclose(void)
+void PC80SD::sd_wclose_proc()
 {
-	w_file->Fclose();
-	delete w_file;
-	w_file = nullptr;
-}
-
-// write 1byte 5F2FH代替
-void sd_w1byte(void)
-{
-	int rdata = rcv1byte();
-	if (w_file != nullptr)
+	switch(sub_state)
 	{
-		w_file->FputUint8(rdata);
-		// 状態コード送信(OK)
-		snd1byte(0x00);
-	}
-	else
-	{
-		snd1byte(0xf0);
-	}
-}
-
-#ifdef _MSC_VER
-unsigned __stdcall arduino_loop(void *lpx)
-#else
-void *arduino_loop(void *lpx)
-#endif
-{
-	printf("arduino_loop start\n");
-	volatile PC80SD *p = (PC80SD *)lpx;
-
-	current_pc80sd = (PC80SD *)p;
-
-	while (p->request_terminate == false)
-	{
-		((PC80SD *)p)->write_signals_thread(1, 0);
-		((PC80SD *)p)->write_signals_thread(2, 0);
-		thread_sleep(1000);
-
-		printf("command wait...\n");
-		uint8_t cmd = rcv1byte();
-		printf("command received %d\n", (int)cmd);
-		if(p->request_terminate)
+		case 0:
 		{
+			sub_state++;
+			send1byte(0x00);
 			break;
 		}
-
-		////    Serial.println(cmd,HEX);
-		if (eflg == false)
+		case 1:
 		{
-			switch (cmd)
-			{
-				// 70h:PC-8001 CMTファイル SAVE
-			case 0x70:
-				////    Serial.println("CMT SAVE START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				cmt_save();
-				break;
-				// 71h:PC-8001 CMTファイル LOAD
-			case 0x71:
-				////    Serial.println("CMT LOAD START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				cmt_load();
-				break;
-				// 72h:PC-8001 5F9EH READ ONE BYTE FROM CMT
-			case 0x72:
-				////    Serial.println("CMT_5F9E START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				cmt_5f9e();
-				break;
-				// 73h:PC-8001 CMTファイル BASIC LOAD
-			case 0x73:
-				////    Serial.println("CMT BASIC LOAD START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				bas_load();
-				break;
-				// 74h:PC-8001 CMTファイル BASIC SAVE
-			case 0x74:
-				////    Serial.println("CMT BASIC SAVE START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				bas_save();
-				break;
-				// 75h:PC-8001 CMTファイル KILL
-			case 0x75:
-				////    Serial.println("CMT KILL START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				bas_kill();
-				break;
-				// 76h:PC-8001 SD FILE READ OPEN
-			case 0x76:
-				////    Serial.println("SD FILE READ OPEN START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				sd_ropen();
-				break;
-				// 77h:PC-8001 SD FILE WRITE APPEND OPEN
-			case 0x77:
-				////    Serial.println("SD FILE WRITE APPEND OPEN START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				sd_waopen();
-				break;
-				// 78h:PC-8001 SD FILE WRITE 1Byte
-			case 0x78:
-				////    Serial.println("SD FILE WRITE 1Byte START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				sd_w1byte();
-				break;
-				// 79h:PC-8001 SD FILE WRITE NEW OPEN
-			case 0x79:
-				////    Serial.println("SD FILE WRITE NEW OPEN START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				sd_wnopen();
-				break;
-				// 7Ah:PC-8001 SD WRITE 5ED9H
-			case 0x7A:
-				////    Serial.println("SD WRITE 5ED9H START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				sd_wdirect();
-				break;
-				// 7Bh:PC-8001 SD FILE WRITE CLOSE
-			case 0x7B:
-				////    Serial.println("SD FILE WRITE CLOSE START");
-				// 状態コード送信(OK)
-				snd1byte(0x00);
-				sd_wclose();
-				break;
-
-				// 83hでファイルリスト出力
-			case 0x83:
-				////    Serial.println("FILE LIST START");
-				// 状態コード送信(OK)
-				printf("dirlist ok send start\n");
-				snd1byte(0x00);
-				printf("dirlist ok send end\n");
-				dirlist();
-				break;
-			default:
-				// 状態コード送信(CMD ERROR)
-				snd1byte(0xF4);
-			}
+			w_file->Fclose();
+			delete w_file;
+			w_file = nullptr;
+			sub_state = 1000;
+			break;
 		}
-		else
+		case 1000:
 		{
-			// 状態コード送信(ERROR)
-			snd1byte(0xF0);
+			loopend();
+			break;
 		}
 	}
-
-	printf("PC80SD thread end\n");
-#ifdef _MSC_VER
-	_endthreadex(0);
-	return 0;
-#else
-	pthread_exit(NULL);
-	return NULL;
-#endif
 }
 
-PC80SD::~PC80SD()
+void PC80SD::dirlist_proc()
 {
-	printf("PC80SD destructor\n");
-	request_terminate = true;
-	thread_join(this);
-
-	printf("PC80SD destructor end\n");
-	release();
-	printf("PC80SD destructor end 2\n");
-}
-
-void PC80SD::initialize()
-{
-	printf("PC80SD initialize\n");
-#if defined(_WIN32) || defined(_WIN64)
-	InitializeCriticalSection(&signal_cs);
-	threadHandle = _beginthreadex(NULL, 0, arduino_loop, this, 0, &threadID);
-#else
-	pthread_mutex_init(&mtx, NULL);
-	pthread_create(&threadID, NULL, (void *(*)(void *)) & arduino_loop, this);
-#endif
-	strcpy(w_name, "default.dat");
-
-	// 時間はテキトー(1.6MHz)
-	register_event(this, EVENT_TIMER, 0.625, true, &register_id);
-
-	signalQueue.Clear();
-	request_terminate = false;
-	sleep_counter = 0;
-}
-
-void PC80SD::release()
-{
-#if defined(_WIN32) || defined(_WIN64)
-	DeleteCriticalSection(&signal_cs);
-#else
-	pthread_mutex_destroy(&mtx);
-#endif
-}
-
-void PC80SD::reset()
-{
-	printf("reset\n");
-
-	request_terminate = true;
-	thread_join(this);
-
-	release();
-
-	initialize();
-	printf("initialize end\n");
-}
-
-void PC80SD::write_signal(int id, uint32_t data, uint32_t mask)
-{
-	if(id == 2)
+	switch(sub_state)
 	{
-		if(current_check == CHECK_HIGH)
+		case 0:
 		{
-			if(data != 0)
+			sub_state++;
+			send1byte(0);
+			break;
+		}
+		case 1:
+		{
+			// 32+1文字を受信
+			sub_state++;
+			receivebytes(33);
+
+			break;
+		}
+		case 2:
+		{
+			// OK
+			memcpy(c_name, receive_datas, 33);
+			sub_state++;
+			bool result = sd_file.open(create_local_path(sd_folder_name));
+			if (result)
 			{
-				current_check = NOCHECK;
+				// OK
+				send1byte(0);
+			} else {
+				// error
+				send1byte(0xf1);
 			}
-		} else if(current_check == CHECK_LOW)
+			break; 
+		}
+		case 3:
 		{
-			if(data == 0)
+			sd_entry = sd_file.openNextFile();
+			cntl2 = 0;
+			br_chk = 0;
+			page = 1;
+			sub_state++;
+		}
+		case 4:
+		{
+			if(br_chk != 0)
 			{
-				current_check = NOCHECK;
+				sub_state = 10;
+			} else if (sd_entry.isValid())
+			{
+				sd_entry.getName(f_name, 36);
+				unsigned int lp1 = 0;
+				// 一件送信
+				// 比較文字列でファイルネームを/re先頭10文字まで比較して一致するものだけを出力
+				if (f_match(f_name, c_name))
+				{
+					// 最大36文字 or 0になるまで送信
+					int len = 36;
+					int slen = strlen(f_name);
+					len = min(len, slen);
+					sub_state++;
+					sendbytes((uint8_t*)f_name, len);
+				}
+			}
+			break;
+		}
+		case 5:
+		{
+			sub_state++;
+			sendbytes(cr_data, 2);
+			cntl2++;
+			break;
+		}
+		case 6:
+		{
+			if (!sd_entry.isValid() || cntl2 > 15)
+			{
+				// 継続・打ち切り選択指示要求
+				sub_state++;
+				send1byte(0xfe);
+			} else {
+				sub_state = 9;
+			}
+			break;
+		}
+		case 7:
+		{
+			sub_state++;
+			receive1byte();
+			break;
+		}
+		case 8:
+		{
+			br_chk = result_value;
+			// 前ページ処理
+			if (br_chk == 0x42)
+			{
+				// 先頭ファイルへ
+				sd_file.rewindDirectory();
+				// entry値更新
+				sd_entry = sd_file.openNextFile();
+				// もう一度先頭ファイルへ
+				sd_file.rewindDirectory();
+				if (page <= 2)
+				{
+					// 現在ページが1ページ又は2ページなら1ページ目に戻る処理
+					page = 0;
+				}
+				else
+				{
+					// 現在ページが3ページ以降なら前々ページまでのファイルを読み飛ばす
+					page = page - 2;
+					cntl2 = 0;
+					while (cntl2 < page * 16)
+					{
+						sd_entry = sd_file.openNextFile();
+						if (f_match(f_name, c_name))
+						{
+							cntl2++;
+						}
+					}
+				}
+				br_chk = 0;
+			}
+			page++;
+			cntl2 = 0;
+		}
+		case 9:
+		{
+			// ファイルがまだあるなら次読み込み、なければ打ち切り指示
+			if (sd_entry.isValid())
+			{
+				sd_entry = sd_file.openNextFile();
+			}
+			else
+			{
+				br_chk = 1;
+			}
+			// FDLの結果が18件未満なら継続指示要求せずにそのまま終了
+			if (!sd_entry.isValid() && cntl2 < 16 && page == 1)
+			{
+				sub_state++;
+			} else {
+				sub_state = 4;
+			}
+			break;
+		}
+		case 10:
+		{
+			sub_state++;
+			sendbytes(end_data, 2);
+			break;
+		}
+		case 11:
+		{
+			loopend();
+			break;
+		}
+	}
+}
+
+void PC80SD::proc_state()
+{
+
+	switch(state)
+	{
+		case PC80SD_INITIALIZE:
+		{
+			write_signals(&port[1].outputs, 0);
+			// digitalWrite(FLGPIN,LOW);
+			write_signals(&port[2].outputs, port[2].reg & 0x7f);
+			state = PC80SD_WAIT_COMMAND;
+			sub_state = 0;
+			// break;
+		}
+		case PC80SD_WAIT_COMMAND:
+		{
+			switch(sub_state)
+			{
+				case 0:
+					sub_state++;
+					receive1byte();
+					break;
+				case 1:
+				{
+					// result_value??R?}???h?l???????????(??????state?l?????g??)
+					state = result_value;
+					sub_state = 0;
+					break;
+				}
+			}
+			break;
+		}
+		case PC80SD_CMT_SAVE:
+		{
+			cmt_save_proc();
+			break;
+		}
+		case PC80SD_CMT_LOAD:
+		{
+			cmt_load_proc();
+			break;
+		}
+		case PC80SD_CMT_5F9E:
+		{
+			cmt_5f9e_proc();
+			break;
+		}
+		case PC80SD_BAS_LOAD:
+		{
+			bas_load_proc();
+			break;
+		}
+		case PC80SD_BAS_SAVE:
+		{
+			bas_save_proc();
+			break;
+		}
+		case PC80SD_BAS_KILL:
+		{
+			bas_kill_proc();
+			break;
+		}
+		case PC80SD_SD_ROPEN:
+		{
+			sd_ropen_proc();
+			break;
+		}
+		case PC80SD_SD_WAOPEN:
+		{
+			sd_waopen_proc();
+			break;
+		}
+		case PC80SD_SD_W1BYTE:
+		{
+			sd_w1byte_proc();
+			break;
+		}
+		case PC80SD_SD_WNOPEN:
+		{
+			sd_wnopen_proc();
+			break;
+		}
+		case PC80SD_SD_WDIRECT:
+		{
+			sd_wdirect_proc();
+			break;
+		}
+		case PC80SD_SD_WCLOSE:
+		{
+			sd_wclose_proc();
+			break;
+		}
+		case PC80SD_DIRLIST:
+		{
+			dirlist_proc();
+			break;
+		}
+		case PC80SD_RCV1BYTE:
+		{
+			switch(sub_state)
+			{
+				case 0:
+				{
+					result_value = 0;
+					sub_state++;
+					receive4bit();
+					break;
+				}
+				case 1:
+				{
+					result_value *= 16;
+					sub_state++;
+					receive4bit();
+					break;
+				}
+				case 2:
+				{
+					popstate();
+					break;
+				}
+			}
+			break;
+		}
+		case PC80SD_RCV4BIT:
+		{
+			switch(sub_state)
+			{
+				case 0:
+				{
+					if((port[2].reg & 0x4) == 0)
+					{
+						return;
+					}
+					sub_state = 1;
+				}
+				case 1:
+				{
+					result_value += port[0].reg & 0xf;
+					sub_state = 2;
+					break;
+				}
+				case 2:
+				{
+					 write_signals(&port[2].outputs, 0x80 );
+					sub_state = 3;
+					break;
+				}
+				case 3:
+				{
+					if((port[2].reg & 0x4) != 0)
+					{
+						return;
+					}
+					sub_state = 4;
+					break;
+				}
+				case 4:
+				{
+					write_signals(&port[2].outputs, 0x00);
+					wait_count = 0;
+					sub_state = 5;
+					break;
+				}
+				case 5:
+				{
+					wait_count++;
+					if(wait_count > 1000)
+					{
+						popstate();
+					}
+					break;
+				}
+			}
+			break;
+			case PC80SD_SND1BYTE:
+			{
+				switch(sub_state)
+				{
+					case 0:
+					{
+						write_signals(&port[1].outputs, send_value);
+
+						write_signals(&port[2].outputs, 0x80 );
+						sub_state++;
+						break;
+					}
+					case 1:
+					{
+						if((port[2].reg & 0x4) == 0)
+						{
+							return;
+						}
+
+						write_signals(&port[2].outputs, 0x00);
+						sub_state++;
+						break;
+					}
+					case 2:
+					{
+						if((port[2].reg & 0x4) != 0)
+						{
+							return;
+						}
+						popstate();
+						break;
+					}
+				}
+				break;
+			}
+			case PC80SD_RCVBYTES:
+			{
+				if(receive_datas_count == 0)
+				{
+					popstate();
+					return;
+				}
+				if(sub_state == 0)
+				{
+					sub_state++;
+					receive1byte();
+				}
+				else
+				{
+					receive_datas[receive_datas_index] = result_value;
+					receive_datas_index++;
+					receive_datas_count--;
+					sub_state = 0;
+				}
+				break;
+			}
+			case PC80SD_SNDBYTES:
+			{
+				if(send_datas_count == 0)
+				{
+					popstate();
+					return;
+				}
+				if(sub_state == 0)
+				{
+					sub_state++;
+					send1byte(send_datas[send_datas_index]);
+				}
+				else
+				{
+					send_datas_index++;
+					send_datas_count--;
+					sub_state = 0;
+				}
+				break;
+			}
+			case PC80SD_RCVNAME:
+			{
+				switch(sub_state)
+				{
+					case 0:
+					{
+						lp2 = 0;
+						sub_state++;
+					}
+					case 1:
+					{
+						sub_state++;
+						receive1byte();
+						break;
+					}
+					case 2:
+					{
+						char r_data = result_value;
+						if(r_data != 0x22)
+						{
+							target_data[lp2] = r_data;
+							lp2++;
+						}
+						if(lp2 == 33)
+						{
+							popstate();
+							break;
+						} else {
+							sub_state = 1;
+						}
+						break;
+					}
+				}
+				break;
+			}
+			case PC80SD_WBODY:
+			{
+				w_body_proc();
+				break;
 			}
 		}
 	}
-	printf("write signal(from Z80) %d %x %x\n", id, data, mask);
-	port[id].reg = (port[id].reg & ~mask) | (data & mask);
-}
-
-void PC80SD::proc_signal()
-{
-#if defined(_WIN32) || defined(_WIN64)
-	EnterCriticalSection(&signal_cs);
-#else
-	pthread_mutex_lock(&mtx);
-#endif
-	// Queueに蓄積されたシグナルをメインスレッドで処理する
-	bool queue_proc = false;
-	if(!signalQueue.IsEmpty())
-	{
-		printf("Queue proc start ------------\n");
-		queue_proc = true;
-	}
-	while (!signalQueue.IsEmpty())
-	{
-		SignalNode *node = signalQueue.Front();
-		printf("signalQueue.Dequeue(to Z80) %d %d\n", node->ch, node->data);
-
-		write_signals(&port[node->ch].outputs, node->data);
-
-		signalQueue.Dequeue();
-	}
-	if(queue_proc)
-	{
-		printf("Queue proc end ------------\n");
-	}
-
-	if(sleep_counter > 0)
-	{
-		sleep_counter--;
-		// printf("sleep dec %d\n", sleep_counter);
-	}
-
-#if defined(_WIN32) || defined(_WIN64)
-	LeaveCriticalSection(&signal_cs);
-#else
-	pthread_mutex_unlock(&mtx);
-#endif
-}
-
-void PC80SD::write_signals_thread(int id, uint32_t data)
-{
-#if defined(_WIN32) || defined(_WIN64)
-	EnterCriticalSection(&signal_cs);
-#else
-	pthread_mutex_lock(&mtx);
-#endif
-	if(id == -1)
-	{
-		sleep_counter = data;
-		// printf("sleep counter set %d\n", data);
-	} else {
-		// if(!signalQueue.IsEmpty())
-		// {
-		// 	printf("write_signals_thread: has queue\n");
-		// 	SignalNode *node = signalQueue.Front();
-		// 	printf("write_signals_thread: front: %d : %d\n", node->ch, node->data);
-		// }
-		signalQueue.Enqueue(id, data);
-		printf("signalQueue.Enqueue(to Z80) %d %d\n", id, data);
-	}
-
-#if defined(_WIN32) || defined(_WIN64)
-	LeaveCriticalSection(&signal_cs);
-#else
-	pthread_mutex_unlock(&mtx);
-#endif
 }
 
 void PC80SD::event_callback(int event_id, int error)
@@ -1558,7 +2013,7 @@ void PC80SD::event_callback(int event_id, int error)
 	switch (event_id)
 	{
 	case EVENT_TIMER:
-		proc_signal();
+		proc_state();
 		break;
 	}
 }
