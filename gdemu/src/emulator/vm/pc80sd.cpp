@@ -65,7 +65,7 @@ char w_name[40];
 bool eflg = false;
 unsigned int s_adrs, e_adrs, w_length, w_len1, w_len2, s_adrs1, s_adrs2, b_length;
 
-FILEIO *file, *w_file;
+FILEIO *file = nullptr, *w_file = nullptr;
 
 const _TCHAR *create_sd_path(const char *path)
 {
@@ -317,10 +317,22 @@ void PC80SD::initialize()
 	register_event(this, EVENT_TIMER, 0.625, true, &register_id);
 
 	stateStack.clear();
+	state = PC80SD_INITIALIZE;
+	sub_state = 0;
 }
 
 void PC80SD::release()
 {
+	if(file)
+	{
+		file->Fclose();
+		file = nullptr;
+	}
+	if(w_file)
+	{
+		w_file->Fclose();
+		w_file = nullptr;
+	}
 }
 
 void PC80SD::reset()
