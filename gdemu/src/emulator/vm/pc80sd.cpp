@@ -239,7 +239,11 @@ bool SDFile::open(const char *path)
 void SDFile::close()
 {
 #if defined(_WIN32) || defined(_WIN64)
-	FindClose(hFind);
+	if(hFind != INVALID_HANDLE_VALUE)
+	{
+		FindClose(hFind);
+		hFind = INVALID_HANDLE_VALUE;
+	}
 #else
 	if(dir != nullptr)
 	{
@@ -319,20 +323,27 @@ void PC80SD::initialize()
 	stateStack.clear();
 	state = PC80SD_INITIALIZE;
 	sub_state = 0;
+	memset(m_name, 0, sizeof(m_name));
+	memset(f_name, 0, sizeof(f_name));
+	memset(c_name, 0, sizeof(c_name));
+	memset(new_name, 0, sizeof(new_name));
+	memset(w_name, 0, sizeof(w_name));
+	r_count = f_length = 0;
 }
 
 void PC80SD::release()
 {
-	if(file)
-	{
-		file->Fclose();
-		file = nullptr;
-	}
-	if(w_file)
+	if (w_file)
 	{
 		w_file->Fclose();
 		w_file = nullptr;
 	}
+	if (file)
+	{
+		file->Fclose();
+		file = nullptr;
+	}
+	sd_file.close();
 }
 
 void PC80SD::reset()
@@ -1628,6 +1639,9 @@ void PC80SD::dirlist_proc()
 					sub_state++;
 					sendbytes((uint8_t*)f_name, len);
 				}
+				else {
+					sub_state = 6;
+				}
 			}
 			break;
 		}
@@ -1733,12 +1747,32 @@ void PC80SD::proc_state()
 	{
 		case PC80SD_INITIALIZE:
 		{
-			write_signals(&port[1].outputs, 0);
-			// digitalWrite(FLGPIN,LOW);
-			write_signals(&port[2].outputs, port[2].reg & 0x7f);
-			state = PC80SD_WAIT_COMMAND;
-			sub_state = 0;
-			// break;
+			switch (sub_state)
+			{
+			case 0:
+			{
+				write_signals(&port[1].outputs, 0);
+				sub_state++;
+				wait_count = 0;
+				// break;
+			}
+			case 1:
+			{
+				wait_count++;
+				if (wait_count > 1000)
+				{
+					sub_state++;
+				}
+				break;
+			}
+			case 2:
+			{
+				write_signals(&port[2].outputs, 0x00);
+				state = PC80SD_WAIT_COMMAND;
+				sub_state = 0;
+			}
+			}
+			break;
 		}
 		case PC80SD_WAIT_COMMAND:
 		{
@@ -1750,7 +1784,6 @@ void PC80SD::proc_state()
 					break;
 				case 1:
 				{
-					// result_value??R?}???h?l???????????(??????state?l?????g??)
 					state = result_value;
 					sub_state = 0;
 					break;
@@ -1885,19 +1918,20 @@ void PC80SD::proc_state()
 				case 4:
 				{
 					write_signals(&port[2].outputs, 0x00);
-					wait_count = 0;
-					sub_state = 5;
+					popstate();
+//					wait_count = 0;
+//					sub_state = 5;
 					break;
 				}
-				case 5:
-				{
-					wait_count++;
-					if(wait_count > 1000)
-					{
-						popstate();
-					}
-					break;
-				}
+//				case 5:
+//				{
+//					wait_count++;
+//					if(wait_count > 1000)
+//					{
+//						popstate();
+//					}
+//					break;
+//				}
 			}
 			break;
 			case PC80SD_SND1BYTE:
@@ -1907,12 +1941,26 @@ void PC80SD::proc_state()
 					case 0:
 					{
 						write_signals(&port[1].outputs, send_value);
-
-						write_signals(&port[2].outputs, 0x80 );
+						wait_count = 0;
 						sub_state++;
 						break;
 					}
 					case 1:
+					{
+						wait_count++;
+						if (wait_count > 700)
+						{
+							sub_state++;
+						}
+						break;
+					}
+					case 2:
+					{
+						write_signals(&port[2].outputs, 0x80 );
+						sub_state++;
+						break;
+					}
+					case 3:
 					{
 						if((port[2].reg & 0x4) == 0)
 						{
@@ -1923,7 +1971,7 @@ void PC80SD::proc_state()
 						sub_state++;
 						break;
 					}
-					case 2:
+					case 4:
 					{
 						if((port[2].reg & 0x4) != 0)
 						{
