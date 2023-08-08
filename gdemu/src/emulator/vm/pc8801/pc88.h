@@ -429,6 +429,9 @@ public:
 #else
 		set_device_name(_T("PC-8801 Core"));
 #endif
+#ifdef SUPPORT_PC80_SDCARD
+		d_sdcard = NULL;
+#endif
 	}
 	~PC88() {}
 	
