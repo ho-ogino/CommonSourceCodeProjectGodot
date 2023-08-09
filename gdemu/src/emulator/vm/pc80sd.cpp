@@ -913,7 +913,9 @@ void PC80SD::cmt_5f9e_proc()
 		{
 			if(file == nullptr)
 			{
-				sub_state = 1000;
+				// ファイルが末尾まで行っているか開いていない場合0xffを返す
+				sub_state++;
+				send1byte(0xff);
 				break;
 			}
 			rdata = file->FgetUint8();
@@ -925,7 +927,7 @@ void PC80SD::cmt_5f9e_proc()
 		case 2:
 		{
 			// ファイルエンドまで達していればFILE CLOSE
-			if (f_length == r_count)
+			if (f_length == r_count && file != nullptr)
 			{
 				file->Fclose();
 				delete file;
