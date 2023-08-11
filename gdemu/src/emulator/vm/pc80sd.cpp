@@ -1609,6 +1609,7 @@ void PC80SD::dirlist_proc()
 				send1byte(0);
 			} else {
 				// error
+				sub_state = 11;
 				send1byte(0xf1);
 			}
 			break; 
@@ -1626,6 +1627,7 @@ void PC80SD::dirlist_proc()
 			if(br_chk != 0)
 			{
 				sub_state = 10;
+				break;
 			} else if (sd_entry.isValid())
 			{
 				sd_entry.getName(f_name, 36);
@@ -1640,11 +1642,14 @@ void PC80SD::dirlist_proc()
 					len = min(len, slen);
 					sub_state++;
 					sendbytes((uint8_t*)f_name, len);
+					break;
 				}
 				else {
 					sub_state = 6;
+					break;
 				}
 			}
+			sub_state = 6;
 			break;
 		}
 		case 5:
@@ -1674,6 +1679,7 @@ void PC80SD::dirlist_proc()
 		}
 		case 8:
 		{
+			sub_state++;
 			br_chk = result_value;
 			// 前ページ処理
 			if (br_chk == 0x42)
