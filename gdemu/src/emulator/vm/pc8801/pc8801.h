@@ -112,11 +112,13 @@
 	#define PC88_EXRAM_BANKS	1
 	#define SUPPORT_PC88_FDD_8INCH
 	#define SUPPORT_M88_DISKDRV
+	#define SUPPORT_PC80_SDCARD
 #elif defined(_PC8001)
 //	#define SUPPORT_PC88_KANJI1
 //	#define SUPPORT_PC88_KANJI2
 //	#define SUPPORT_PC88_FDD_8INCH
 //	#define SUPPORT_M88_DISKDRV
+	#define SUPPORT_PC80_SDCARD
 #endif
 #define SUPPORT_PC88_GSX8800
 #define SUPPORT_PC88_PCG8100
@@ -165,7 +167,8 @@
 #define DIPSWITCH_M88_DISKDRV	0x100
 #define DIPSWITCH_QUASIS88_CMT	0x200
 #define DIPSWITCH_16BIT		0x400
-#define DIPSWITCH_DEFAULT	(DIPSWITCH_HMB20 + DIPSWITCH_GSX8800 + DIPSWITCH_PCG8100 + DIPSWITCH_CMDSING + DIPSWITCH_FDD_5INCH)
+#define DIPSWITCH_PC8001_SD	0x800
+#define DIPSWITCH_DEFAULT	(DIPSWITCH_HMB20 + DIPSWITCH_GSX8800 + DIPSWITCH_PCG8100 + DIPSWITCH_CMDSING + DIPSWITCH_FDD_5INCH + DIPSWITCH_PC8001_SD)
 #define USE_JOYSTICK_TYPE	2
 #if defined(SUPPORT_PC88_FDD_8INCH)
 #define USE_FLOPPY_DISK		4
@@ -178,7 +181,7 @@
 #define USE_COMPACT_DISC	1
 #endif
 #define USE_KEY_LOCKED
-// slow enough for N88-“ú–{ŒêBASIC
+// slow enough for N88-ï¿½ï¿½ï¿½{ï¿½ï¿½BASIC
 #define USE_AUTO_KEY		8
 #define USE_AUTO_KEY_RELEASE	10
 #define USE_AUTO_KEY_NUMPAD
@@ -244,7 +247,9 @@
 #else
 #define USE_PRINTER_TYPE	3
 #endif
+#if !defined(_GDNATIVE_)
 #define USE_DEBUGGER
+#endif
 #define USE_STATE
 
 #include "../../common.h"
@@ -342,6 +347,10 @@ class MEMORY;
 class DiskIO;
 #endif
 
+#ifdef SUPPORT_PC80_SDCARD
+class PC80SD;
+#endif
+
 class PC88;
 
 class VM : public VM_TEMPLATE
@@ -417,6 +426,11 @@ protected:
 	
 #ifdef SUPPORT_M88_DISKDRV
 	DiskIO* pc88diskio;
+#endif
+
+#ifdef SUPPORT_PC80_SDCARD
+	I8255* pc80sd_pio;
+	PC80SD* pc80sd_dev;
 #endif
 	
 	PC88* pc88;

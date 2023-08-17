@@ -161,6 +161,9 @@ private:
 #ifdef SUPPORT_M88_DISKDRV
 	DEVICE *d_diskio;
 #endif
+#ifdef SUPPORT_PC80_SDCARD
+	DEVICE *d_sdcard;
+#endif
 	
 	uint8_t* rbank[16];
 	uint8_t* wbank[16];
@@ -182,6 +185,9 @@ private:
 	uint8_t n80rom[0x8000];
 #if defined(_PC8001MK2) || defined(_PC8001SR)
 	uint8_t n80erom[0x2000];
+#endif
+#if defined(SUPPORT_PC80_SDCARD)
+	uint8_t n80sdrom[0x2000];
 #endif
 #if defined(_PC8001SR)
 	uint8_t n80srrom[0xa000];
@@ -352,6 +358,12 @@ private:
 	
 	void release_tape();
 	bool check_data_carrier();
+
+#ifdef SUPPORT_PC80_SDCARD
+	FILEIO *sdcard_fio;
+	_TCHAR sd_file_path[_MAX_PATH];
+	uint8_t sd_buffer[CMT_BUFFER_SIZE];
+#endif
 	
 	// beep/sing
 	bool beep_on, beep_signal, sing_signal;
@@ -416,6 +428,9 @@ public:
 		set_device_name(_T("PC-8001 Core"));
 #else
 		set_device_name(_T("PC-8801 Core"));
+#endif
+#ifdef SUPPORT_PC80_SDCARD
+		d_sdcard = NULL;
 #endif
 	}
 	~PC88() {}
@@ -561,6 +576,12 @@ public:
 	void set_context_diskio(DEVICE* device)
 	{
 		d_diskio = device;
+	}
+#endif
+#ifdef SUPPORT_PC80_SDCARD
+	void set_context_sdcard(DEVICE* device)
+	{
+		d_sdcard = device;
 	}
 #endif
 	void key_down(int code, bool repeat);

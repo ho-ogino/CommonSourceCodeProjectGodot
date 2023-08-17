@@ -69,6 +69,10 @@
 #include "diskio.h"
 #endif
 
+#ifdef SUPPORT_PC80_SDCARD
+#include "../pc80sd.h"
+#endif
+
 #include "pc88.h"
 
 // ----------------------------------------------------------------------------
@@ -369,6 +373,17 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 		pc88diskio = NULL;
 	}
 #endif
+
+#ifdef SUPPORT_PC80_SDCARD
+	if(config.dipswitch & DIPSWITCH_PC8001_SD) {
+		pc80sd_pio = new I8255(this, emu);
+		pc80sd_pio->set_device_name(_T("8255 PIO (PC-8001(mkII)_SD board)"));
+		pc80sd_dev = new PC80SD(this, emu);
+	} else {
+		pc80sd_pio = NULL;
+		pc80sd_dev = NULL;
+	}
+#endif
 	
 	// set cpu device contexts
 #ifdef SUPPORT_PC88_HIGH_CLOCK
@@ -494,6 +509,17 @@ VM::VM(EMU* parent_emu) : VM_TEMPLATE(parent_emu)
 #ifdef SUPPORT_M88_DISKDRV
 	if(config.dipswitch & DIPSWITCH_M88_DISKDRV) {
 		pc88->set_context_diskio(pc88diskio);
+	}
+#endif
+#ifdef SUPPORT_PC80_SDCARD
+	if(config.dipswitch & DIPSWITCH_PC8001_SD) {
+		pc88->set_context_sdcard(pc80sd_pio);
+		pc80sd_pio->clear_ports_by_cmdreg = true;
+		pc80sd_pio->set_context_port_a(pc80sd_dev, SIG_I8255_PORT_A, 0xFF, 0);
+		pc80sd_pio->set_context_port_c(pc80sd_dev, SIG_I8255_PORT_C, 0x0F, 0);
+
+		pc80sd_dev->set_context_port_b(pc80sd_pio, SIG_I8255_PORT_B, 0xFF, 0);
+		pc80sd_dev->set_context_port_c(pc80sd_pio, SIG_I8255_PORT_C, 0xF0, 0);
 	}
 #endif
 	pc88cpu->set_context_mem(pc88);
@@ -677,6 +703,12 @@ void VM::reset()
 		pc88pio_sub->write_signal(SIG_I8255_PORT_C, 0, 0xff);
 	}
 	pc88pio->write_signal(SIG_I8255_PORT_C, 0, 0xff);
+
+#ifdef SUPPORT_PC80_SDCARD
+	if(config.dipswitch & DIPSWITCH_PC8001_SD) {
+		pc80sd_pio->write_signal(SIG_I8255_PORT_C, 0, 0xff);
+	}
+#endif
 }
 
 void VM::run()
